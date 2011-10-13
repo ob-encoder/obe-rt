@@ -1028,11 +1028,14 @@ void obe_close( obe_t *h )
 
     /* Cancel mux thread */
 
-    pthread_mutex_lock( &h->mux_mutex );
-    h->cancel_mux_thread = 1;
-    pthread_cond_signal( &h->mux_cv );
-    pthread_mutex_unlock( &h->mux_mutex );
-    pthread_join( h->mux_thread, &ret_ptr );
+    if ( h->mux_thread )
+    {
+        pthread_mutex_lock( &h->mux_mutex );
+        h->cancel_mux_thread = 1;
+        pthread_cond_signal( &h->mux_cv );
+        pthread_mutex_unlock( &h->mux_mutex );
+        pthread_join( h->mux_thread, &ret_ptr );
+    }
 
     fprintf( stderr, "mux cancelled \n" );
 

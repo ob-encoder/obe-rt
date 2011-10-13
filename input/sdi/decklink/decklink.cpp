@@ -833,8 +833,6 @@ static void *probe_stream( void *ptr )
     if( open_card( decklink_opts ) < 0 )
         goto finish;
 
-    sleep( 1 );
-
     close_card( decklink_opts );
 
     /* TODO: probe for SMPTE 337M */

@@ -22,15 +22,18 @@
  *
  *****************************************************************************/
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <getopt.h>
+#include <unistd.h>
 
 #include "config.h"
 
 #include <signal.h>
-#define _GNU_SOURCE
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -51,6 +54,8 @@ typedef struct
     obe_mux_opts_t mux_opts;
     obe_output_opts_t output;
     int avc_profile;
+    int run_shell;
+    char *config_file;
 } obecli_ctx_t;
 
 obecli_ctx_t cli;
@@ -1516,12 +1521,102 @@ static int run_cmd_prompt( void )
     return 0;
 }
 
+static int keep_running = 1;
+
+void signal_quit(int sig) {
+    if (!keep_running)
+        raise(sig);
+    keep_running = 0;
+}
+
+int run_with_config( void )
+{
+    FILE *fp = fopen( cli.config_file, "r" );
+    if ( !fp ) {
+        fprintf( stderr, "ERROR: Can't open config file '%s': %s\n", cli.config_file, strerror( errno ) );
+        return -1;
+    }
+
+    size_t len = 0;
+    ssize_t read, i;
+    while ( ( read = getline(&line_read, &len, fp) ) != -1 ) {
+        if ( !len )
+            continue;
+
+        // Trim line
+        for ( i = strlen( line_read ) - 1; i >= 0; i-- ) {
+            if ( line_read[i] == '\r' || line_read[i] == '\n' )
+                line_read[i] = '\0';
+        }
+
+        // Skip comments and empty lines
+        if ( strlen(line_read) && line_read[0] != '#' ) {
+            printf("CMD: %s\n", line_read);
+            int ret = parse_command( line_read, main_commands );
+            if ( ret == -1 )
+                fprintf( stderr, "ERROR: '%s': command not found.\n", line_read );
+        }
+    }
+    free( line_read );
+
+    if ( !cli.run_shell )
+    {
+        signal(SIGINT , signal_quit);
+        signal(SIGTERM, signal_quit);
+
+        while ( keep_running )
+            sleep(3600);
+
+        stop_encode( NULL, NULL );
+    }
+
+    return 0;
+}
+
+static const char short_options[] = "c:sh";
+
+static const struct option long_options[] = {
+    { "config-file",        required_argument, NULL, 'c' },
+    { "shell",              no_argument,       NULL, 's' },
+    { "help",               no_argument,       NULL, 'h' },
+    { 0, 0, 0, 0 }
+};
+
+static void show_cmdline_params( void ) {
+    //              10        20        30        40        50        60       70         80
+    //      12345678901234567890123456789012345678901234567890123456789012345678901234567890
+    printf("Command line parameters:\n");
+    printf("\n");
+    printf("  -c --config-file <file>    | Read commands from <file>.\n");
+    printf("  -s --shell                 | Run interactive OBE shell. This is the default\n");
+    printf("                             . action when no command line parameters are used.\n");
+    printf("  -h --help                  | Show command line parameters.\n");
+    printf("\n");
+}
+
+extern char *optarg;
+
 int main( int argc, char **argv )
 {
     printf( "\n" );
     printf( "Open Broadcast Encoder command line interface.\n" );
     printf( "Version 1.0\n" );
     printf( "\n" );
+
+    int j;
+    while( ( j = getopt_long( argc, argv, short_options, long_options, NULL ) ) != -1 ) {
+        switch ( j ) {
+            case 'c': // --config-file
+                cli.config_file = optarg;
+                break;
+            case 's': // --shell
+                cli.run_shell = !cli.run_shell;
+                break;
+            case 'h': // --help
+                show_cmdline_params();
+                return 0;
+        }
+    }
 
     cli.h = obe_setup();
     if( !cli.h )
@@ -1532,5 +1627,12 @@ int main( int argc, char **argv )
 
     cli.avc_profile = -1;
 
-    return run_cmd_prompt();
+    int ret = 0;
+    if ( cli.config_file )
+        ret = run_with_config();
+
+    if ( argc < 2 || cli.run_shell )
+        ret = run_cmd_prompt();
+
+    return ret;
 }

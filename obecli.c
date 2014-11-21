@@ -1465,7 +1465,7 @@ static int parse_command( char *command, obecli_command_t *commmand_list )
     return 0;
 }
 
-int main( int argc, char **argv )
+static int run_cmd_prompt( void )
 {
     char *home_dir = getenv( "HOME" );
     char *history_filename;
@@ -1480,19 +1480,6 @@ int main( int argc, char **argv )
 
     sprintf( history_filename, "%s/.obecli_history", home_dir );
     read_history( history_filename );
-
-    cli.h = obe_setup();
-    if( !cli.h )
-    {
-        fprintf( stderr, "obe_setup failed\n" );
-        return -1;
-    }
-
-    cli.avc_profile = -1;
-
-    printf( "\nOpen Broadcast Encoder command line interface.\n" );
-    printf( "Version 1.0 \n" );
-    printf( "\n" );
 
     while( 1 )
     {
@@ -1518,17 +1505,6 @@ int main( int argc, char **argv )
             int ret = parse_command( line_read, main_commands );
             if( ret == -1 )
                 fprintf( stderr, "%s: command not found \n", line_read );
-
-            if( !cli.h )
-            {
-                cli.h = obe_setup();
-                if( !cli.h )
-                {
-                    fprintf( stderr, "obe_setup failed\n" );
-                    return -1;
-                }
-                cli.avc_profile = -1;
-            }
         }
     }
 
@@ -1538,4 +1514,23 @@ int main( int argc, char **argv )
     stop_encode( NULL, NULL );
 
     return 0;
+}
+
+int main( int argc, char **argv )
+{
+    printf( "\n" );
+    printf( "Open Broadcast Encoder command line interface.\n" );
+    printf( "Version 1.0\n" );
+    printf( "\n" );
+
+    cli.h = obe_setup();
+    if( !cli.h )
+    {
+        fprintf( stderr, "obe_setup failed\n" );
+        return -1;
+    }
+
+    cli.avc_profile = -1;
+
+    return run_cmd_prompt();
 }

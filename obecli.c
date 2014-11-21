@@ -1573,12 +1573,13 @@ int run_with_config( void )
     return 0;
 }
 
-static const char short_options[] = "c:sh";
+static const char short_options[] = "c:shH";
 
 static const struct option long_options[] = {
     { "config-file",        required_argument, NULL, 'c' },
     { "shell",              no_argument,       NULL, 's' },
     { "help",               no_argument,       NULL, 'h' },
+    { "full-help",          no_argument,       NULL, 'H' },
     { 0, 0, 0, 0 }
 };
 
@@ -1591,7 +1592,15 @@ static void show_cmdline_params( void ) {
     printf("  -s --shell                 | Run interactive OBE shell. This is the default\n");
     printf("                             . action when no command line parameters are used.\n");
     printf("  -h --help                  | Show command line parameters.\n");
+    printf("  -H --full-help             | Show --help and show OBE configuration commands.\n");
     printf("\n");
+}
+
+static void show_cmd_help( char *in_cmd )
+{
+    char *cmd = strdup( in_cmd );
+    parse_command( cmd, main_commands );
+    free( cmd );
 }
 
 extern char *optarg;
@@ -1614,6 +1623,16 @@ int main( int argc, char **argv )
                 break;
             case 'h': // --help
                 show_cmdline_params();
+                return 0;
+            case 'H': // --full-help
+                show_cmdline_params();
+                show_cmd_help( "help ");
+                for( int i = 0; show_commands[i].name != 0; i++ )
+                {
+                    char show_cmd[32];
+                    snprintf( show_cmd, sizeof(show_cmd), "show %s", show_commands[i].name );
+                    show_cmd_help( show_cmd );
+                }
                 return 0;
         }
     }

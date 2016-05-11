@@ -1052,7 +1052,6 @@ static int show_help( char *command, obecli_command_t *child )
     for( int i = 0; add_commands[i].name != 0; i++ )
     {
         H0( "       %-*s          - %s \n", 8, add_commands[i].name, add_commands[i].description );
-        i++;
     }
 
     H0( "\n" );

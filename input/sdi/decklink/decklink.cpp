@@ -1015,7 +1015,14 @@ static void *probe_stream( void *ptr )
     if( open_card( decklink_opts ) < 0 )
         goto finish;
 
-    sleep( 1 );
+    /* Wait for up to 10 seconds, checking for a probe success every 100ms.
+     * Avoid issues with some links where probe takes an unusually long time.
+     */
+    for (int z = 0; z < 10 * 10; z++) {
+        usleep(100 * 1000);
+        if (decklink_opts->probe_success)
+            break;
+    }
 
     close_card( decklink_opts );
 

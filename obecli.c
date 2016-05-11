@@ -1491,7 +1491,8 @@ int main( int argc, char **argv )
     cli.avc_profile = -1;
 
     printf( "\nOpen Broadcast Encoder command line interface.\n" );
-    printf( "Version 1.0 \n" );
+    printf( "Including Kernel Labs fixups.\n" );
+    printf( "Version 1.1\n" );
     printf( "\n" );
 
     while( 1 )

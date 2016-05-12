@@ -133,6 +133,7 @@ typedef struct
 
     obe_device_t *device;
     obe_t *h;
+    BMDDisplayMode enabled_mode_id;
 } decklink_ctx_t;
 
 typedef struct
@@ -295,8 +296,15 @@ public:
 
                 decklink_ctx->p_input->PauseStreams();
                 decklink_ctx->p_input->EnableVideoInput( p_display_mode->GetDisplayMode(), bmdFormat10BitYUV, bmdVideoInputEnableFormatDetection );
+                decklink_ctx->enabled_mode_id = mode_id;
                 decklink_ctx->p_input->FlushStreams();
                 decklink_ctx->p_input->StartStreams();
+            } else {
+                syslog(LOG_ERR, "Decklink card index %i: Resolution changed from %08x to %08x, aborting.",
+                    decklink_opts_->card_idx, decklink_ctx->enabled_mode_id, mode_id);
+                printf("Decklink card index %i: Resolution changed from %08x to %08x, aborting.\n",
+                    decklink_opts_->card_idx, decklink_ctx->enabled_mode_id, mode_id);
+                exit(0); /* Take an intensional hard exit */
             }
         }
         return S_OK;
@@ -903,6 +911,7 @@ static int open_card( decklink_opts_t *decklink_opts )
         ret = -1;
         goto finish;
     }
+    decklink_ctx->enabled_mode_id = wanted_mode_id;
 
     /* Set up audio. */
     result = decklink_ctx->p_input->EnableAudioInput( sample_rate, bmdAudioSampleType32bitInteger, decklink_opts->num_channels );

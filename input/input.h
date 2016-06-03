@@ -50,5 +50,6 @@ typedef struct
 extern const obe_input_func_t decklink_input;
 #endif
 extern const obe_input_func_t linsys_sdi_input;
+extern const obe_input_func_t v4l2_input;
 
 #endif

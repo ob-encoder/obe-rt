@@ -29,6 +29,8 @@ ifneq ($(findstring HAVE_DECKLINK 1, $(CONFIG)),)
 SRCCXX += input/sdi/decklink/decklink.cpp
 endif
 
+SRCCXX += input/sdi/v4l2/v4l2.cpp
+
 # MMX/SSE optims
 ifneq ($(AS),)
 X86SRC0 = vfilter.asm

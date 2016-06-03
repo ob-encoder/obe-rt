@@ -167,6 +167,7 @@ static const obecli_input_name_t input_names[] =
     { INPUT_URL,             "URL",      "URL (includes UDP and RTP)",             "libavformat" },
     { INPUT_DEVICE_DECKLINK, "Decklink", "Blackmagic Design Decklink input",       "internal" },
     { INPUT_DEVICE_DECKLINK, "Linsys SDI", "Linear Systems (DVEO) SDI card input", "internal" },
+    { INPUT_DEVICE_V4L2    , "V4L2", "Video4Linux2 Raw Frame Device", "internal" },
     { 0, 0, 0 },
 };
 

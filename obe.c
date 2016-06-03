@@ -614,6 +614,8 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
 #endif
     else if( input_device->input_type == INPUT_DEVICE_LINSYS_SDI )
         input = linsys_sdi_input;
+    else if (input_device->input_type == INPUT_DEVICE_V4L2)
+        input = v4l2_input;
     else
     {
         fprintf( stderr, "Invalid input device \n" );
@@ -660,6 +662,8 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
         printf( "Probing device: \"%s\". ", input_device->location );
     else if( input_device->input_type == INPUT_DEVICE_LINSYS_SDI )
         printf( "Probing device: Linsys card %i. ", input_device->card_idx );
+    else if (input_device->input_type == INPUT_DEVICE_V4L2)
+        printf( "Probing device: V4L2 card %i. ", input_device->card_idx);
     else
         printf( "Probing device: Decklink card %i. ", input_device->card_idx );
 
@@ -984,6 +988,8 @@ int obe_start( obe_t *h )
 #endif
     else if( h->devices[0]->device_type == INPUT_DEVICE_LINSYS_SDI )
         input = linsys_sdi_input;
+    else if (h->devices[0]->device_type == INPUT_DEVICE_V4L2)
+        input = v4l2_input;
     else
     {
         fprintf( stderr, "Invalid input device \n" );

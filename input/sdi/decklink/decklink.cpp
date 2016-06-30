@@ -636,8 +636,10 @@ fail:
 
     if( raw_frame )
     {
-        raw_frame->release_data( raw_frame );
-        raw_frame->release_frame( raw_frame );
+        if (raw_frame->release_data)
+            raw_frame->release_data( raw_frame );
+        if (raw_frame->release_frame)
+            raw_frame->release_frame( raw_frame );
     }
 
     return S_OK;

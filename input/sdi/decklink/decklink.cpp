@@ -37,7 +37,7 @@ extern "C"
 #include <libavutil/opt.h>
 }
 
-#include "include/DeckLinkAPI.h"
+#include <include/DeckLinkAPI.h>
 #include "include/DeckLinkAPIDispatch.cpp"
 
 #define DECKLINK_VANC_LINES 100

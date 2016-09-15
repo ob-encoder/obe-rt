@@ -1246,6 +1246,10 @@ static int show_input_streams( char *command, obecli_command_t *child )
                 printf( "               %s:   %s\n", stream->frame_data[j].source == VBI_RAW ? "VBI" : "", format_name );
             }
         }
+        else if(stream->stream_format == DVB_TABLE_SECTION)
+        {
+            printf( "Input-stream-id: %d - DVB Table Section: Pid 0x%04x\n", stream->input_stream_id, stream->section_output_pid);
+        }
         else
             printf( "Input-stream-id: %d \n", stream->input_stream_id );
     }
@@ -1281,6 +1285,10 @@ static int show_output_streams( char *command, obecli_command_t *child )
         {
             format_name = get_format_name( cli.output_streams[i].stream_format, format_names, 0 );
             printf( "Audio: %s - SDI audio pair: %d \n", format_name, cli.output_streams[i].sdi_audio_pair );
+        }
+        else if(input_stream->stream_type == STREAM_TYPE_MISC && input_stream->stream_format == DVB_TABLE_SECTION)
+        {
+            printf("PSIP: DVB_TABLE_SECTION\n");
         }
 
     }

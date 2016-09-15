@@ -167,6 +167,9 @@ enum stream_formats_e
     VANC_DTV_DATA_BROADCAST,
     VANC_SMPTE_VBI,
     VANC_SCTE_104,
+
+    /* Kernel Labs, a generic handler */
+    DVB_TABLE_SECTION,
 };
 
 enum mp2_mode_e
@@ -234,6 +237,9 @@ typedef struct
 
     /** Misc **/
     int source; /* e.g. VBI/VANC */
+
+    /* KL / Sections */
+    int section_output_pid;
 }obe_input_stream_t;
 
 typedef struct

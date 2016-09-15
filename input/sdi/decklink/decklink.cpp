@@ -35,6 +35,8 @@ extern "C"
 #include "input/sdi/x86/sdi.h"
 #include <libavresample/avresample.h>
 #include <libavutil/opt.h>
+#include <libklvanc/vanc.h>
+#include "scte/scte.h"
 }
 
 #include <include/DeckLinkAPI.h>
@@ -135,6 +137,14 @@ typedef struct
     obe_t *h;
     BMDDisplayMode enabled_mode_id;
 
+    /* LIBKLVANC handle / context */
+    struct vanc_context_s *vanchdl;
+
+    /* TODO: Placeholder. SCTE35 message generation.
+     * Move this into some common core area so all SDI input
+     * benefit.
+     */
+    struct scte35_context_s scte35;
     BMDTimeValue stream_time;
 } decklink_ctx_t;
 
@@ -170,6 +180,32 @@ struct decklink_status
     obe_input_params_t *input;
     decklink_opts_t *decklink_opts;
 };
+
+/* Take one line of V210 from VANC, colorspace convert and feed it to the
+ * VANC parser. We'll expect our VANC message callbacks to happen on this
+ * same calling thread.
+ */
+static void convert_colorspace_and_parse_vanc(struct vanc_context_s *vanchdl, unsigned char *buf, unsigned int uiWidth, unsigned int lineNr)
+{
+	/* Convert the vanc line from V210 to CrCB422, then vanc parse it */
+
+	/* We need two kinds of type pointers into the source vbi buffer */
+	/* TODO: What the hell is this, two ptrs? */
+	const uint32_t *src = (const uint32_t *)buf;
+
+	/* Convert Blackmagic pixel format to nv20.
+	 * src pointer gets mangled during conversion, hence we need its own
+	 * ptr instead of passing vbiBufferPtr */
+	uint16_t decoded_words[8192];
+	memset(&decoded_words[0], 0, sizeof(decoded_words));
+	uint16_t *p_anc = decoded_words;
+	klvanc_v210_line_to_nv20_c(src, p_anc, (uiWidth / 6) * 6);
+
+	int ret = vanc_packet_parse(vanchdl, lineNr, decoded_words, sizeof(decoded_words) / (sizeof(unsigned short)));
+	if (ret < 0) {
+		/* No VANC on this line */
+	}
+}
 
 static void setup_pixel_funcs( decklink_opts_t *decklink_opts )
 {
@@ -412,6 +448,9 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             else
                 decklink_ctx->blank_line( anc_buf_pos, width );
 
+            /* Give libklvanc a chance to parse all vanc, and call our callbacks (same thread) */
+            convert_colorspace_and_parse_vanc(decklink_ctx->vanchdl, (unsigned char *)anc_line, stride, line);
+
             anc_buf_pos += anc_line_stride / 2;
             anc_lines[num_anc_lines++] = line;
 
@@ -651,6 +690,11 @@ static void close_card( decklink_opts_t *decklink_opts )
 {
     decklink_ctx_t *decklink_ctx = &decklink_opts->decklink_ctx;
 
+    if (decklink_ctx->vanchdl) {
+        vanc_context_destroy(decklink_ctx->vanchdl);
+        decklink_ctx->vanchdl = 0;
+    }
+
     if( decklink_ctx->p_config )
         decklink_ctx->p_config->Release();
 
@@ -680,6 +724,128 @@ static void close_card( decklink_opts_t *decklink_opts )
 
 }
 
+/* VANC Callbacks */
+static int cb_PAYLOAD_INFORMATION(void *callback_context, struct vanc_context_s *ctx, struct packet_payload_information_s *pkt)
+{
+	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)callback_context;
+	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY) {
+		printf("%s:%s()\n", __FILE__, __func__);
+		dump_PAYLOAD_INFORMATION(ctx, pkt); /* vanc lib helper */
+	}
+
+	return 0;
+}
+
+static int cb_EIA_708B(void *callback_context, struct vanc_context_s *ctx, struct packet_eia_708b_s *pkt)
+{
+	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)callback_context;
+	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY) {
+		printf("%s:%s()\n", __FILE__, __func__);
+		dump_EIA_708B(ctx, pkt); /* vanc lib helper */
+	}
+
+#if 0
+	/* Test some mux section parsing */
+	const unsigned char section[] = {
+		0xfc, 0x30, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+		0x4f, 0x25, 0x33, 0x96 };
+	int seclen = sizeof(section);
+	obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, seclen);
+	if(!coded_frame) {
+		syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, seclen);
+		return -1;
+	}
+	coded_frame->pts = decklink_ctx->stream_time;
+	coded_frame->random_access = 1; /* ? */
+	memcpy(coded_frame->data, section, seclen);
+	add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+#endif
+
+#if 0
+	/* TODO: Placeholder. We need some properly network in/out business logic.
+         * This eventually moves into the 104 processing callback.
+         * Here for testing purposes.
+         */
+
+ 	struct scte35_context_s *scte35 = &decklink_ctx->scte35;
+
+	{
+		/* Generate a sample OUT OF NETWORK transition */
+		scte35_generate_immediate_out_of_network(scte35);
+
+		obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);
+		if (!coded_frame) {
+			syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
+			return -1;
+		}
+		coded_frame->pts = decklink_ctx->stream_time;
+		coded_frame->random_access = 1; /* ? */
+		memcpy(coded_frame->data, scte35->section, scte35->section_length);
+		add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+	}
+
+	{
+		/* Generate a sample BACK TO NETWORK transition */
+		scte35_generate_immediate_in_to_network(scte35);
+		obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);
+		if (!coded_frame) {
+			syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
+			return -1;
+		}
+		coded_frame->pts = decklink_ctx->stream_time;
+		coded_frame->random_access = 1; /* ? */
+		memcpy(coded_frame->data, scte35->section, scte35->section_length);
+		add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+	}
+#endif
+	return 0;
+}
+
+static int cb_EIA_608(void *callback_context, struct vanc_context_s *ctx, struct packet_eia_608_s *pkt)
+{
+	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)callback_context;
+	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY) {
+		printf("%s:%s()\n", __FILE__, __func__);
+		dump_EIA_608(ctx, pkt); /* vanc library helper */
+	}
+
+	return 0;
+}
+
+static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struct packet_scte_104_s *pkt)
+{
+	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)callback_context;
+	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY) {
+		printf("%s:%s()\n", __FILE__, __func__);
+		dump_SCTE_104(ctx, pkt); /* vanc library helper */
+	}
+	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_SCTE104) {
+		syslog(LOG_INFO, "[decklink] SCTE104 frames present");
+		fprintf(stdout, "[decklink] SCTE104 frames present");
+	}
+
+#if 0
+	/* TODO: We need a callback to generate SCTE-35 messages, based on 104 input. */
+
+	/* Business logic, what kind of SCTE35 event to create. For debug purposes issue
+	 * an immediate in / out of network message. This in no way reflects reality.
+	 */
+	scte35_generate_immediate_out_of_network(&decklink_ctx->scte35);
+	scte35_generate_immediate_in_to_network(&decklink_ctx->scte35);
+#endif
+	return 0;
+}
+
+static struct vanc_callbacks_s callbacks = 
+{
+	.payload_information	= cb_PAYLOAD_INFORMATION,
+	.eia_708b		= cb_EIA_708B,
+	.eia_608		= cb_EIA_608,
+	.scte_104		= cb_SCTE_104,
+};
+/* End: VANC Callbacks */
+
 static int open_card( decklink_opts_t *decklink_opts )
 {
     decklink_ctx_t *decklink_ctx = &decklink_opts->decklink_ctx;
@@ -696,6 +862,16 @@ static int open_card( decklink_opts_t *decklink_opts )
     IDeckLinkDisplayModeIterator *p_display_iterator = NULL;
     IDeckLinkIterator *decklink_iterator = NULL;
     HRESULT result;
+
+    if (vanc_context_create(&decklink_ctx->vanchdl) < 0) {
+        fprintf(stderr, "[decklink] Error initializing VANC library context\n");
+    } else {
+        decklink_ctx->vanchdl->verbose = 0;
+        decklink_ctx->vanchdl->callbacks = &callbacks;
+        decklink_ctx->vanchdl->callback_context = decklink_ctx;
+    }
+    /* TODO: 123 PID NR */
+    scte35_initialize(&decklink_ctx->scte35, 0x0123);
 
     avcodec_register_all();
     decklink_ctx->dec = avcodec_find_decoder( AV_CODEC_ID_V210 );
@@ -1084,6 +1260,28 @@ static void *probe_stream( void *ptr )
             /* TODO: support other sample rates */
             streams[i]->sample_rate = 48000;
         }
+    }
+
+    /* Add a new output stream type, a TABLE_SECTION mechanism.
+     * We use this to pass DVB table sections direct to the muxer,
+     * for SCTE35, and other sections in the future.
+     */
+    if (1)
+    {
+        streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
+        if (!streams[cur_stream])
+            goto finish;
+
+        pthread_mutex_lock(&h->device_list_mutex);
+        streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
+        pthread_mutex_unlock(&h->device_list_mutex);
+
+        streams[cur_stream]->stream_type = STREAM_TYPE_MISC;
+        streams[cur_stream]->stream_format = DVB_TABLE_SECTION;
+        streams[cur_stream]->pid = 0x123; /* TODO: hardcoded PID not currently used. */
+        if(add_non_display_services(non_display_parser, streams[cur_stream], USER_DATA_LOCATION_DVB_STREAM) < 0 )
+            goto finish;
+        cur_stream++;
     }
 
     if( non_display_parser->has_vbi_frame )

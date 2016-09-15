@@ -729,6 +729,7 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
         }
 
         memcpy( stream_out->lang_code, stream_in->lang_code, 4 );
+        stream_out->section_output_pid = stream_in->pid;
     }
 
     return 0;

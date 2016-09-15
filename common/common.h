@@ -430,6 +430,11 @@ typedef struct
 
 struct obe_t
 {
+    /* bitmask, def:0. */
+#define INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY (1 <<  0)
+#define INPUTSOURCE__SDI_VANC_DISCOVERY_SCTE104 (1 <<  1)
+#define MUX__DQ_HEXDUMP                         (1 <<  4)
+    uint32_t verbose_bitmask;
     int is_active;
     int obe_system;
 

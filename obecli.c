@@ -37,6 +37,7 @@
 
 #include "obe.h"
 #include "obecli.h"
+#include "common/common.h"
 
 #define FAIL_IF_ERROR( cond, ... ) FAIL_IF_ERR( cond, "obecli", __VA_ARGS__ )
 #define RETURN_IF_ERROR( cond, ... ) RETURN_IF_ERR( cond, "options", NULL, __VA_ARGS__ )
@@ -951,6 +952,40 @@ static int set_outputs( char *command, obecli_command_t *child )
     cli.output.outputs = calloc( num_outputs, sizeof(*cli.output.outputs) );
     FAIL_IF_ERROR( !cli.output.outputs, "Malloc failed" );
     cli.output.num_outputs = num_outputs;
+    return 0;
+}
+
+static void display_verbose()
+{
+    uint32_t bm = cli.h->verbose_bitmask;
+    printf("verbose = 0x%08x\n", cli.h->verbose_bitmask);
+
+#define DISPLAY_VERBOSE_MASK(bm, mask) \
+	printf("\t%s = %s\n", #mask, bm & mask ? "enabled" : "disabled");
+    /* INPUT SOURCES */
+    DISPLAY_VERBOSE_MASK(bm, INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY);
+    DISPLAY_VERBOSE_MASK(bm, INPUTSOURCE__SDI_VANC_DISCOVERY_SCTE104);
+
+    /* MUXER */
+    DISPLAY_VERBOSE_MASK(bm, MUX__DQ_HEXDUMP);
+}
+
+static int set_verbose(char *command, obecli_command_t *child)
+{
+    unsigned int bitmask = 0;
+    if (!strlen(command)) {
+        /* Missing arg, display the current value. */
+        display_verbose();
+        return 0;
+    }
+
+    int tok_len = strcspn(command, " ");
+    command[tok_len] = 0;
+
+    if (sscanf(command, "0x%x", &bitmask) != 1)
+        return -1;
+
+    cli.h->verbose_bitmask = bitmask;
     return 0;
 }
 

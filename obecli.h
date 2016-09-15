@@ -49,6 +49,7 @@ static int set_stream( char *command, obecli_command_t *child );
 static int set_muxer( char *command, obecli_command_t *child );
 static int set_output( char *command, obecli_command_t *child );
 static int set_outputs( char *command, obecli_command_t *child );
+static int set_verbose( char *command, obecli_command_t *child );
 
 static int show_bitdepth( char *command, obecli_command_t *child );
 static int show_decoders( char *command, obecli_command_t *child );
@@ -144,6 +145,7 @@ static obecli_command_t set_commands[] =
     { "mux",    "[name] OR opts [opts]",  "Set muxer name or muxer opts",   set_muxer,  NULL },
     { "output", "opts outputid:[opts]",   "Set output name or output opts", set_output, NULL },
     { "outputs", "[number]",              "Set output name or output opts", set_outputs, NULL },
+    { "verbose", "[number]",              "Set verbosity level", set_verbose, NULL },
     { 0 }
 };
 

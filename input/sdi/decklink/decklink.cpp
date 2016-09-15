@@ -873,6 +873,11 @@ static int open_card( decklink_opts_t *decklink_opts )
     /* TODO: 123 PID NR */
     scte35_initialize(&decklink_ctx->scte35, 0x0123);
 
+#if 1
+#pragma message "SCTE104 verbose debugging enabled."
+    decklink_ctx->h->verbose_bitmask = INPUTSOURCE__SDI_VANC_DISCOVERY_SCTE104;
+#endif
+
     avcodec_register_all();
     decklink_ctx->dec = avcodec_find_decoder( AV_CODEC_ID_V210 );
     if( !decklink_ctx->dec )

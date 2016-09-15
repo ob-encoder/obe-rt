@@ -442,6 +442,18 @@ void *open_muxer( void *ptr )
         for( int i = 0; i < h->mux_queue.size; i++ )
         {
             coded_frame = h->mux_queue.queue[i];
+
+            if (h->verbose_bitmask & MUX__DQ_HEXDUMP) {
+                printf("coded_frame: output_stream_id = %d, is_video = %d, len = %6d -- ",
+                    coded_frame->output_stream_id, coded_frame->is_video, coded_frame->len);
+                    for (int x = 0; x < coded_frame->len; x++) {
+                        printf("%02x ", *(coded_frame->data + x));
+                        if (x > 8)
+                            break;
+                    }
+                printf("\n");
+            }
+
             output_stream = get_output_mux_stream( mux_params, coded_frame->output_stream_id );
             // FIXME name
             int64_t rescaled_dts = coded_frame->pts - first_video_pts + first_video_real_pts;

@@ -268,7 +268,7 @@ static void *audioThreadFunc(void *p)
 		raw_frame->audio_frame.audio_data[0] = (uint8_t*)malloc(AUDIO_READ_SIZE);
 		memcpy(raw_frame->audio_frame.audio_data[0], buf, AUDIO_READ_SIZE);
 
-		int64_t pts = av_rescale_q(v4l2_ctx->a_counter++, v4l2_ctx->v_timebase, (AVRational){1, OBE_CLOCK} );
+//		int64_t pts = av_rescale_q(v4l2_ctx->a_counter++, v4l2_ctx->v_timebase, (AVRational){1, OBE_CLOCK} );
 		//obe_clock_tick(v4l2_ctx->h, pts);
 		raw_frame->pts = 0;
 
@@ -295,7 +295,7 @@ static void *videoThreadFunc(void *p)
 {
 	v4l2_opts_t *v4l2_opts = (v4l2_opts_t *)p;
 	v4l2_ctx_t *v4l2_ctx = &v4l2_opts->v4l2_ctx;
-	int frame_counter = 0;
+//	int frame_counter = 0;
 
 	obe_raw_frame_t *raw_frame = NULL;
 	int bufferType = V4L2_BUF_TYPE_VIDEO_CAPTURE;

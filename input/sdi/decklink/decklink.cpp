@@ -820,9 +820,53 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 		printf("%s:%s()\n", __FILE__, __func__);
 		dump_SCTE_104(ctx, pkt); /* vanc library helper */
 	}
+
+	struct single_operation_message *m = &pkt->so_msg;
+	struct splice_request_data *d = &pkt->sr_data;
+	if (m->opID == INIT_REQUEST_DATA) {
+
+		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
+
+ 		struct scte35_context_s *scte35 = &decklink_ctx->scte35;
+		if (d->splice_insert_type == SPLICESTART_IMMEDIATE)
+			scte35_generate_immediate_out_of_network(scte35);
+		if (d->splice_insert_type == SPLICEEND_IMMEDIATE)
+			scte35_generate_immediate_in_to_network(scte35);
+
+		/* Now send the constructed frame to the mux */
+		obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);
+		if (!coded_frame) {
+			syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
+			return -1;
+		}
+		coded_frame->pts = decklink_ctx->stream_time;
+		coded_frame->random_access = 1; /* ? */
+		memcpy(coded_frame->data, scte35->section, scte35->section_length);
+		add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+	} else {
+	}
+
 	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_SCTE104) {
-		syslog(LOG_INFO, "[decklink] SCTE104 frames present");
-		fprintf(stdout, "[decklink] SCTE104 frames present");
+		static time_t lastErrTime = 0;
+		time_t now = time(0);
+		if (lastErrTime != now) {
+			lastErrTime = now;
+
+			char t[64];
+			sprintf(t, "%s", ctime(&now));
+			t[ strlen(t) - 1] = 0;
+			syslog(LOG_INFO, "[decklink] SCTE104 frames present");
+			fprintf(stdout, "[decklink] SCTE104 frames present  @ %s", t);
+#if 0
+			int dlen = pkt->hdr.rawLengthWords;
+			//dlen = 512;
+			for (int i = 0; i < dlen; i++)
+				printf("%04x ", pkt->hdr.raw[i]);
+#endif
+			printf("\n");
+			fflush(stdout);
+
+		}
 	}
 
 #if 0

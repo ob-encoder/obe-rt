@@ -869,15 +869,6 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 		}
 	}
 
-#if 0
-	/* TODO: We need a callback to generate SCTE-35 messages, based on 104 input. */
-
-	/* Business logic, what kind of SCTE35 event to create. For debug purposes issue
-	 * an immediate in / out of network message. This in no way reflects reality.
-	 */
-	scte35_generate_immediate_out_of_network(&decklink_ctx->scte35);
-	scte35_generate_immediate_in_to_network(&decklink_ctx->scte35);
-#endif
 	return 0;
 }
 

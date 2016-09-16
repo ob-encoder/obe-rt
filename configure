@@ -187,6 +187,7 @@ asm="auto"
 debug="no"
 libx264="auto"
 lmpegts="auto"
+lklscte35="auto"
 pthread="auto"
 ltwolame="auto"
 swscale="auto"
@@ -661,6 +662,22 @@ else
     die "libmpegts is a mandatory component"
 fi
 
+LKLSCTE35_LIBS="-lklscte35"
+if [ "$lklscte35" = "auto" ] ; then
+    lklscte35="no"
+    if cc_check libklscte35/scte35.h "$LKLSCTE35_LIBS" ; then
+        lklscte35="yes"
+    fi
+fi
+
+if [ "$lklscte35" = "yes" ] ; then
+    define HAVE_LIBKLSCTE35
+    LDFLAGS="$LDFLAGS $LKLSCTE35_LIBS"
+else
+    die "libklscte35 is a mandatory component"
+fi
+
+
 if [ "$decklink" = "auto" ] ; then
     decklink="no"
     decklinkflags="-lDeckLinkAPI"
@@ -791,6 +808,7 @@ libtwolame: $ltwolame
 Mux
 
 libmpegts:  $lmpegts
+libklscte35:$lklscte35
 
 Frontends
 

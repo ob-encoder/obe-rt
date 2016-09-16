@@ -36,7 +36,7 @@ extern "C"
 #include <libavresample/avresample.h>
 #include <libavutil/opt.h>
 #include <libklvanc/vanc.h>
-#include "scte/scte.h"
+#include <libklscte35/scte35.h>
 }
 
 #include <include/DeckLinkAPI.h>

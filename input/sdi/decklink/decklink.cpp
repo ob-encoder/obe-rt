@@ -827,11 +827,51 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 
 		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
 
+#if 0
+ pkt->payloadDescriptorByte = 0x8
+ m->opID = 0x1
+   opID = init_request_data
+ m->messageSize = 0x1b
+   message_size = 27 bytes
+ m->result = 0xffff
+ m->result_extension = 0xffff
+ m->protocol_version = 0x0
+ m->AS_index = 0x0
+ m->message_number = 0x0
+ m->DPI_PID_index = 0x0
+ d->splice_insert_type = 0x2
+   splice_insert_type = spliceStart_immediate
+ d->splice_event_id = 0x1
+ d->unique_program_id = 0x1
+ d->pre_roll_time = 0x0
+ d->brk_duration = 0x12c
+   break_duration = 300 (1/10th seconds)
+ d->avail_num = 0x0
+ d->avails_expected = 0x0
+ d->auto_return_flag = 0x1
+
+#endif
  		struct scte35_context_s *scte35 = &decklink_ctx->scte35;
-		if (d->splice_insert_type == SPLICESTART_IMMEDIATE)
-			scte35_generate_immediate_out_of_network(scte35);
-		if (d->splice_insert_type == SPLICEEND_IMMEDIATE)
-			scte35_generate_immediate_in_to_network(scte35);
+		if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
+			dump_SCTE_104(ctx, pkt); /* vanc library helper */
+
+			scte35_set_next_event_id(scte35,
+				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
+			scte35_generate_immediate_out_of_network(scte35,
+				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
+
+//#define SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt) ((pkt)->sr_data.unique_program_id)
+//#define SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt) ((pkt)->sr_data.splice_event_id)
+//#define SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt) ((pkt)->sr_data.auto_return_flag)
+
+		}
+
+		if (d->splice_insert_type == SPLICEEND_IMMEDIATE) {
+			scte35_set_next_event_id(scte35,
+				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
+			scte35_generate_immediate_in_to_network(scte35,
+				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
+		}
 
 		/* Now send the constructed frame to the mux */
 		obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);

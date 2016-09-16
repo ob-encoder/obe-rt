@@ -411,15 +411,25 @@ static int count = 0;
 }
 
 	/* Go into Ad, switch away from the network */
-int scte35_generate_immediate_out_of_network(struct scte35_context_s *ctx)
+int scte35_generate_immediate_out_of_network(struct scte35_context_s *ctx, uint16_t uniqueProgramId)
 {
 	dprintf(1, "%s()\n", __func__);
+	ctx->uniqueProgramId = uniqueProgramId;
 	return scte35_generate_pointinout(ctx, 1);
 }
 
-int scte35_generate_immediate_in_to_network(struct scte35_context_s *ctx)
+int scte35_generate_immediate_in_to_network(struct scte35_context_s *ctx, uint16_t uniqueProgramId)
 {
 	dprintf(1, "%s()\n", __func__);
 	/* Go to network, switch away from the ad slicer */
+	ctx->uniqueProgramId = uniqueProgramId;
 	return scte35_generate_pointinout(ctx, 0);
 }
+
+int scte35_set_next_event_id(struct scte35_context_s *ctx, uint32_t eventId)
+{
+	dprintf(1, "%s(%d)\n", __func__, eventId);
+	ctx->eventId = eventId;
+	return 0;
+}
+

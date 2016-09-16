@@ -41,13 +41,13 @@ void scte35_initialize(struct scte35_context_s *ctx, uint16_t outputPid);
  * Return the number of TS packets generated in ctx->pkt, typically 1, or
  * < 0 on error.
  */
-int scte35_generate_immediate_out_of_network(struct scte35_context_s *ctx);
+int scte35_generate_immediate_out_of_network(struct scte35_context_s *ctx, uint16_t uniqueProgramId);
 
 /* Go out of Ad break, return back to the network.
  * Return the number of TS packets generated in ctx->pkt, typically 1, or
  * < 0 on error.
  */
-int scte35_generate_immediate_in_to_network(struct scte35_context_s *ctx);
+int scte35_generate_immediate_in_to_network(struct scte35_context_s *ctx, uint16_t uniqueProgramId);
 
 /* Generate a splice_null() heartbeat packet. This typically keeps the
  * downstream slicer alive, not specifically in the spec. 
@@ -55,3 +55,10 @@ int scte35_generate_immediate_in_to_network(struct scte35_context_s *ctx);
  * < 0 on error.
  */
 int scte35_generate_heartbeat(struct scte35_context_s *ctx);
+
+/* Allow the next event ID to be set, so that SCTE104 translated
+ * packets, that contain their own eventID, we will to honor.
+ * Return the number of TS packets generated in ctx->pkt, typically 1, or
+ * < 0 on error.
+ */
+int scte35_set_next_event_id(struct scte35_context_s *ctx, uint32_t eventId);

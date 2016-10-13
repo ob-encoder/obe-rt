@@ -826,31 +826,6 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 	if (m->opID == SO_INIT_REQUEST_DATA) {
 
 		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
-
-#if 0
- pkt->payloadDescriptorByte = 0x8
- m->opID = 0x1
-   opID = init_request_data
- m->messageSize = 0x1b
-   message_size = 27 bytes
- m->result = 0xffff
- m->result_extension = 0xffff
- m->protocol_version = 0x0
- m->AS_index = 0x0
- m->message_number = 0x0
- m->DPI_PID_index = 0x0
- d->splice_insert_type = 0x2
-   splice_insert_type = spliceStart_immediate
- d->splice_event_id = 0x1
- d->unique_program_id = 0x1
- d->pre_roll_time = 0x0
- d->brk_duration = 0x12c
-   break_duration = 300 (1/10th seconds)
- d->avail_num = 0x0
- d->avails_expected = 0x0
- d->auto_return_flag = 0x1
-
-#endif
  		struct scte35_context_s *scte35 = &decklink_ctx->scte35;
 		if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
 			dump_SCTE_104(ctx, pkt); /* vanc library helper */
@@ -859,10 +834,6 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
 			scte35_generate_immediate_out_of_network(scte35,
 				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
-
-//#define SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt) ((pkt)->sr_data.unique_program_id)
-//#define SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt) ((pkt)->sr_data.splice_event_id)
-//#define SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt) ((pkt)->sr_data.auto_return_flag)
 
 		}
 
@@ -883,6 +854,7 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 		coded_frame->random_access = 1; /* ? */
 		memcpy(coded_frame->data, scte35->section, scte35->section_length);
 		add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+
 	} else {
 	}
 
@@ -912,12 +884,23 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 	return 0;
 }
 
+#if 0
+static int cb_all(void *callback_context, struct vanc_context_s *ctx, struct packet_header_s *pkt)
+{
+	printf("%s()\n", __func__);
+	return 0;
+}
+#endif
+
 static struct vanc_callbacks_s callbacks = 
 {
 	.payload_information	= cb_PAYLOAD_INFORMATION,
 	.eia_708b		= cb_EIA_708B,
 	.eia_608		= cb_EIA_608,
 	.scte_104		= cb_SCTE_104,
+#if 0
+	.all			= cb_all,
+#endif
 };
 /* End: VANC Callbacks */
 

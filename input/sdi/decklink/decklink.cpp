@@ -823,7 +823,7 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 
 	struct single_operation_message *m = &pkt->so_msg;
 	struct splice_request_data *d = &pkt->sr_data;
-	if (m->opID == INIT_REQUEST_DATA) {
+	if (m->opID == SO_INIT_REQUEST_DATA) {
 
 		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
 

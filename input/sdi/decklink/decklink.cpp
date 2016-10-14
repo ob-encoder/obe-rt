@@ -165,6 +165,9 @@ typedef struct
     int video_format;
     int num_channels;
     int probe;
+#define OPTION_ENABLED(opt) (decklink_opts->enable_##opt)
+    int enable_smpte2038;
+    int enable_scte35;
 
     /* Output */
     int probe_success;
@@ -859,12 +862,30 @@ static int cb_EIA_608(void *callback_context, struct vanc_context_s *ctx, struct
 	return 0;
 }
 
+static int findOutputStreamIdByFormat(decklink_ctx_t *decklink_ctx, enum stream_type_e stype, enum stream_formats_e fmt)
+{
+	if (decklink_ctx && decklink_ctx->device == NULL)
+		return -1;
+
+	for(int i = 0; i < decklink_ctx->device->num_input_streams; i++) {
+		if ((decklink_ctx->device->streams[i]->stream_type == stype) &&
+			(decklink_ctx->device->streams[i]->stream_format == fmt))
+			return i;
+        }
+
+	return -1;
+}
+ 
 static int transmit_scte35_section_to_muxer(decklink_ctx_t *decklink_ctx)
 {
  	struct scte35_context_s *scte35 = &decklink_ctx->scte35;
 
+	int streamId = findOutputStreamIdByFormat(decklink_ctx, STREAM_TYPE_MISC, DVB_TABLE_SECTION);
+	if (streamId < 0)
+		return 0;
+
 	/* Now send the constructed frame to the mux */
-	obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);
+	obe_coded_frame_t *coded_frame = new_coded_frame(streamId, scte35->section_length);
 	if (!coded_frame) {
 		syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
 		return -1;
@@ -879,8 +900,12 @@ static int transmit_scte35_section_to_muxer(decklink_ctx_t *decklink_ctx)
 
 static int transmit_pes_to_muxer(decklink_ctx_t *decklink_ctx, uint8_t *buf, uint32_t byteCount)
 {
+	int streamId = findOutputStreamIdByFormat(decklink_ctx, STREAM_TYPE_MISC, SMPTE2038);
+	if (streamId < 0)
+		return 0;
+
 	/* Now send the constructed frame to the mux */
-	obe_coded_frame_t *coded_frame = new_coded_frame(3 /* encoder->output_stream_id */, byteCount);
+	obe_coded_frame_t *coded_frame = new_coded_frame(streamId, byteCount);
 	if (!coded_frame) {
 		syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, byteCount);
 		return -1;
@@ -893,9 +918,10 @@ static int transmit_pes_to_muxer(decklink_ctx_t *decklink_ctx, uint8_t *buf, uin
 	return 0;
 }
 
-
 static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struct packet_scte_104_s *pkt)
 {
+	/* It should be impossible to get here until the user has asked to enable SCTE35 */
+
 	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)callback_context;
 	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY) {
 		printf("%s:%s()\n", __FILE__, __func__);
@@ -1038,12 +1064,21 @@ static int open_card( decklink_opts_t *decklink_opts )
         decklink_ctx->vanchdl->callbacks = &callbacks;
         decklink_ctx->vanchdl->callback_context = decklink_ctx;
     }
-    /* TODO: 123 PID NR */
-    scte35_initialize(&decklink_ctx->scte35, 0x0123);
 
-    if (smpte2038_packetizer_alloc(&decklink_ctx->smpte2038_ctx) < 0) {
-        fprintf(stderr, "Unable to allocate a SMPTE2038 context.\n");
-    }
+    if (OPTION_ENABLED(scte35)) {
+        /* TODO: 123 PID NR */
+        scte35_initialize(&decklink_ctx->scte35, 0x0123);
+        fprintf(stdout, "Enabling option SCTE35\n");
+    } else
+	callbacks.scte_104 = NULL;
+
+    if (OPTION_ENABLED(smpte2038)) {
+        fprintf(stdout, "Enabling option SMPTE2038\n");
+        if (smpte2038_packetizer_alloc(&decklink_ctx->smpte2038_ctx) < 0) {
+            fprintf(stderr, "Unable to allocate a SMPTE2038 context.\n");
+        }
+    } else
+	callbacks.all = NULL;
 
 #if 1
 #pragma message "SCTE104 verbose debugging enabled."
@@ -1371,6 +1406,8 @@ static void *probe_stream( void *ptr )
     decklink_opts->video_conn = user_opts->video_connection;
     decklink_opts->audio_conn = user_opts->audio_connection;
     decklink_opts->video_format = user_opts->video_format;
+    decklink_opts->enable_smpte2038 = user_opts->enable_smpte2038;
+    decklink_opts->enable_scte35 = user_opts->enable_scte35;
 
     decklink_opts->probe = non_display_parser->probe = 1;
 
@@ -1443,7 +1480,7 @@ static void *probe_stream( void *ptr )
      * We use this to pass DVB table sections direct to the muxer,
      * for SCTE35, and other sections in the future.
      */
-    if (1)
+    if (OPTION_ENABLED(scte35))
     {
         streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
         if (!streams[cur_stream])
@@ -1464,7 +1501,7 @@ static void *probe_stream( void *ptr )
     /* Add a new output stream type, a SCTE2038 mechanism.
      * We use this to pass PES direct to the muxer.
      */
-    if (1)
+    if (OPTION_ENABLED(smpte2038))
     {
         streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
         if (!streams[cur_stream])
@@ -1569,6 +1606,8 @@ static void *open_input( void *ptr )
     decklink_opts->video_conn = user_opts->video_connection;
     decklink_opts->audio_conn = user_opts->audio_connection;
     decklink_opts->video_format = user_opts->video_format;
+    decklink_opts->enable_smpte2038 = user_opts->enable_smpte2038;
+    decklink_opts->enable_scte35 = user_opts->enable_scte35;
 
     decklink_ctx = &decklink_opts->decklink_ctx;
 

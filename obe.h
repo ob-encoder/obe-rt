@@ -109,6 +109,9 @@ typedef struct
     int video_format;
     int video_connection;
     int audio_connection;
+
+    int enable_smpte2038;
+    int enable_scte35;
 } obe_input_t;
 
 /**** Stream Formats ****/

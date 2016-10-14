@@ -186,6 +186,8 @@ struct decklink_status
     decklink_opts_t *decklink_opts;
 };
 
+static int transmit_pes_to_muxer(decklink_ctx_t *decklink_ctx, uint8_t *buf, uint32_t byteCount);
+
 /* Take one line of V210 from VANC, colorspace convert and feed it to the
  * VANC parser. We'll expect our VANC message callbacks to happen on this
  * same calling thread.
@@ -651,6 +653,9 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                     fclose(fh);
                 }
 #endif
+		if (transmit_pes_to_muxer(decklink_ctx, decklink_ctx->smpte2038_ctx->buf, decklink_ctx->smpte2038_ctx->bufused) < 0) {
+			fprintf(stderr, "%s() failed to xmit PES to muxer\n", __func__);
+		}
             }
         }
 
@@ -871,6 +876,23 @@ static int transmit_scte35_section_to_muxer(decklink_ctx_t *decklink_ctx)
 
 	return 0;
 }
+
+static int transmit_pes_to_muxer(decklink_ctx_t *decklink_ctx, uint8_t *buf, uint32_t byteCount)
+{
+	/* Now send the constructed frame to the mux */
+	obe_coded_frame_t *coded_frame = new_coded_frame(3 /* encoder->output_stream_id */, byteCount);
+	if (!coded_frame) {
+		syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, byteCount);
+		return -1;
+	}
+	coded_frame->pts = decklink_ctx->stream_time;
+	coded_frame->random_access = 1; /* ? */
+	memcpy(coded_frame->data, buf, byteCount);
+	add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+
+	return 0;
+}
+
 
 static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struct packet_scte_104_s *pkt)
 {
@@ -1438,6 +1460,28 @@ static void *probe_stream( void *ptr )
             goto finish;
         cur_stream++;
     }
+
+    /* Add a new output stream type, a SCTE2038 mechanism.
+     * We use this to pass PES direct to the muxer.
+     */
+    if (1)
+    {
+        streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
+        if (!streams[cur_stream])
+            goto finish;
+
+        pthread_mutex_lock(&h->device_list_mutex);
+        streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
+        pthread_mutex_unlock(&h->device_list_mutex);
+
+        streams[cur_stream]->stream_type = STREAM_TYPE_MISC;
+        streams[cur_stream]->stream_format = SMPTE2038;
+        streams[cur_stream]->pid = 0x124; /* TODO: hardcoded PID not currently used. */
+        if(add_non_display_services(non_display_parser, streams[cur_stream], USER_DATA_LOCATION_DVB_STREAM) < 0 )
+            goto finish;
+        cur_stream++;
+    }
+
 
     if( non_display_parser->has_vbi_frame )
     {

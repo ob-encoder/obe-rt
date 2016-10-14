@@ -639,6 +639,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
         if (decklink_ctx->smpte2038_ctx) {
             if (smpte2038_packetizer_end(decklink_ctx->smpte2038_ctx) == 0) {
 
+#if 0
                 /* buf: smpte2038_ctx->buf count:smpte2038_ctx->bufused */
                 static int idx = 0;
                 char fn[64];
@@ -649,6 +650,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                     fwrite(decklink_ctx->smpte2038_ctx->buf, 1, decklink_ctx->smpte2038_ctx->bufused, fh);
                     fclose(fh);
                 }
+#endif
             }
         }
 

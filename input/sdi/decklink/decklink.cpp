@@ -39,6 +39,7 @@ extern "C"
 #include <libklscte35/scte35.h>
 }
 
+#include <assert.h>
 #include <include/DeckLinkAPI.h>
 #include "include/DeckLinkAPIDispatch.cpp"
 
@@ -195,11 +196,16 @@ static void convert_colorspace_and_parse_vanc(struct vanc_context_s *vanchdl, un
 
 	/* Convert Blackmagic pixel format to nv20.
 	 * src pointer gets mangled during conversion, hence we need its own
-	 * ptr instead of passing vbiBufferPtr */
-	uint16_t decoded_words[8192];
+	 * ptr instead of passing vbiBufferPtr.
+	 * decoded_words should be atleast 2 * uiWidth.
+	 */
+	uint16_t decoded_words[16384];
+	assert(uiWidth * 2 < sizeof(decoded_words));
+
 	memset(&decoded_words[0], 0, sizeof(decoded_words));
 	uint16_t *p_anc = decoded_words;
-	klvanc_v210_line_to_nv20_c(src, p_anc, (uiWidth / 6) * 6);
+	if (klvanc_v210_line_to_nv20_c(src, p_anc, sizeof(decoded_words), (uiWidth / 6) * 6) < 0)
+		return;
 
 	int ret = vanc_packet_parse(vanchdl, lineNr, decoded_words, sizeof(decoded_words) / (sizeof(unsigned short)));
 	if (ret < 0) {

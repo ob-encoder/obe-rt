@@ -147,6 +147,10 @@ typedef struct
      */
     struct scte35_context_s scte35;
     BMDTimeValue stream_time;
+
+    /* SMPTE2038 packetizer */
+    struct smpte2038_packetizer_s *smpte2038_ctx;
+
 } decklink_ctx_t;
 
 typedef struct
@@ -386,6 +390,10 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     if( videoframe )
     {
+        /* At the beginning of each video frame, prepare the smpte2038 packetizer */
+        if (decklink_ctx->smpte2038_ctx)
+            smpte2038_packetizer_begin(decklink_ctx->smpte2038_ctx);
+
         if( videoframe->GetFlags() & bmdFrameHasNoInputSource )
         {
             syslog( LOG_ERR, "Decklink card index %i: No input signal detected", decklink_opts_->card_idx );
@@ -624,7 +632,27 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             decklink_ctx->non_display_parser.num_vbi = 0;
             decklink_ctx->non_display_parser.num_anc_vbi = 0;
         }
-    }
+
+        /* At the end of each video frame, complete the smpte2038 packetizer.
+	 * collect the single PES frame, pass it to the output TS mux.
+	 */
+        if (decklink_ctx->smpte2038_ctx) {
+            if (smpte2038_packetizer_end(decklink_ctx->smpte2038_ctx) == 0) {
+
+                /* buf: smpte2038_ctx->buf count:smpte2038_ctx->bufused */
+                static int idx = 0;
+                char fn[64];
+                sprintf(fn, "/tmp/pes%08d.bin", idx++);
+                FILE *fh = fopen(fn, "a+");
+                if (fh) {
+                    printf("Writing SMPTE2038 PES to %s\n", fn);
+                    fwrite(decklink_ctx->smpte2038_ctx->buf, 1, decklink_ctx->smpte2038_ctx->bufused, fh);
+                    fclose(fh);
+                }
+            }
+        }
+
+    } /* if video frame */
 
     /* TODO: probe SMPTE 337M audio */
 
@@ -699,6 +727,11 @@ static void close_card( decklink_opts_t *decklink_opts )
     if (decklink_ctx->vanchdl) {
         vanc_context_destroy(decklink_ctx->vanchdl);
         decklink_ctx->vanchdl = 0;
+    }
+
+    if (decklink_ctx->smpte2038_ctx) {
+        smpte2038_packetizer_free(&decklink_ctx->smpte2038_ctx);
+        decklink_ctx->smpte2038_ctx = 0;
     }
 
     if( decklink_ctx->p_config )
@@ -819,6 +852,24 @@ static int cb_EIA_608(void *callback_context, struct vanc_context_s *ctx, struct
 	return 0;
 }
 
+static int transmit_scte35_section_to_muxer(decklink_ctx_t *decklink_ctx)
+{
+ 	struct scte35_context_s *scte35 = &decklink_ctx->scte35;
+
+	/* Now send the constructed frame to the mux */
+	obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);
+	if (!coded_frame) {
+		syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
+		return -1;
+	}
+	coded_frame->pts = decklink_ctx->stream_time;
+	coded_frame->random_access = 1; /* ? */
+	memcpy(coded_frame->data, scte35->section, scte35->section_length);
+	add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+
+	return 0;
+}
+
 static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struct packet_scte_104_s *pkt)
 {
 	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)callback_context;
@@ -827,22 +878,21 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 		dump_SCTE_104(ctx, pkt); /* vanc library helper */
 	}
 
+	struct multiple_operation_message *mom = &pkt->mo_msg;
 	struct single_operation_message *m = &pkt->so_msg;
 	struct splice_request_data *d = &pkt->sr_data;
+
 	if (m->opID == SO_INIT_REQUEST_DATA) {
 
 		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
  		struct scte35_context_s *scte35 = &decklink_ctx->scte35;
 		if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
-			dump_SCTE_104(ctx, pkt); /* vanc library helper */
-
 			scte35_set_next_event_id(scte35,
 				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
 			scte35_generate_immediate_out_of_network(scte35,
 				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
 
-		}
-
+		} else
 		if (d->splice_insert_type == SPLICEEND_IMMEDIATE) {
 			scte35_set_next_event_id(scte35,
 				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
@@ -851,17 +901,37 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 		}
 
 		/* Now send the constructed frame to the mux */
-		obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);
-		if (!coded_frame) {
-			syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
-			return -1;
-		}
-		coded_frame->pts = decklink_ctx->stream_time;
-		coded_frame->random_access = 1; /* ? */
-		memcpy(coded_frame->data, scte35->section, scte35->section_length);
-		add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+		transmit_scte35_section_to_muxer(decklink_ctx);
+	} else
+	if (m->opID == 0xFFFF /* Multiple Operation Message */) {
+
+		for (int i = 0; i < mom->num_ops; i++) {
+			struct multiple_operation_message_operation *o = &mom->ops[i];
+			if (o->opID == MO_INIT_REQUEST_DATA) {
+
+				struct scte35_context_s *scte35 = &decklink_ctx->scte35;
+				if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
+					scte35_set_next_event_id(scte35,
+						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
+					scte35_generate_immediate_out_of_network(scte35,
+						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
+				} else
+				if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
+					scte35_set_next_event_id(scte35,
+						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
+					scte35_generate_immediate_in_to_network(scte35,
+						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
+				}
+
+				/* Now send the constructed frame to the mux */
+				transmit_scte35_section_to_muxer(decklink_ctx);
+			} else {
+				/* Unsupport message type */
+			}
+		} /* for all message types */
 
 	} else {
+		/* Unsupported single_operation_message type */
 	}
 
 	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_SCTE104) {
@@ -890,13 +960,25 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 	return 0;
 }
 
-#if 0
 static int cb_all(void *callback_context, struct vanc_context_s *ctx, struct packet_header_s *pkt)
 {
-	printf("%s()\n", __func__);
+	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)callback_context;
+	if (decklink_ctx->h->verbose_bitmask & INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY) {
+		printf("%s()\n", __func__);
+	}
+
+	/* We've been called with a VANC frame. Pass it to the SMPTE2038 packetizer.
+	 * We'll be called here from the thread handing the VideoFrameArrived
+	 * callback, which calls vanc_packet_parse for each ANC line.
+	 * Push the pkt into the SMPTE2038 layer, its collecting VANC data.
+	 */
+	if (decklink_ctx->smpte2038_ctx) {
+		if (smpte2038_packetizer_append(decklink_ctx->smpte2038_ctx, pkt) < 0) {
+		}
+	}
+
 	return 0;
 }
-#endif
 
 static struct vanc_callbacks_s callbacks = 
 {
@@ -904,9 +986,7 @@ static struct vanc_callbacks_s callbacks =
 	.eia_708b		= cb_EIA_708B,
 	.eia_608		= cb_EIA_608,
 	.scte_104		= cb_SCTE_104,
-#if 0
 	.all			= cb_all,
-#endif
 };
 /* End: VANC Callbacks */
 
@@ -936,6 +1016,10 @@ static int open_card( decklink_opts_t *decklink_opts )
     }
     /* TODO: 123 PID NR */
     scte35_initialize(&decklink_ctx->scte35, 0x0123);
+
+    if (smpte2038_packetizer_alloc(&decklink_ctx->smpte2038_ctx) < 0) {
+        fprintf(stderr, "Unable to allocate a SMPTE2038 context.\n");
+    }
 
 #if 1
 #pragma message "SCTE104 verbose debugging enabled."

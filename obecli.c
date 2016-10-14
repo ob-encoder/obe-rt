@@ -1250,6 +1250,10 @@ static int show_input_streams( char *command, obecli_command_t *child )
         {
             printf( "Input-stream-id: %d - DVB Table Section: Pid 0x%04x\n", stream->input_stream_id, stream->section_output_pid);
         }
+        else if(stream->stream_format == SMPTE2038)
+        {
+            printf( "Input-stream-id: %d - PES_PRIVATE_1 SMPTE2038: Pid 0x%04x\n", stream->input_stream_id, stream->section_output_pid);
+        }
         else
             printf( "Input-stream-id: %d \n", stream->input_stream_id );
     }
@@ -1289,6 +1293,10 @@ static int show_output_streams( char *command, obecli_command_t *child )
         else if(input_stream->stream_type == STREAM_TYPE_MISC && input_stream->stream_format == DVB_TABLE_SECTION)
         {
             printf("PSIP: DVB_TABLE_SECTION\n");
+        }
+        else if(input_stream->stream_type == STREAM_TYPE_MISC && input_stream->stream_format == SMPTE2038)
+        {
+            printf("PES_PRIVATE_1: SMPTE2038 packets\n");
         }
 
     }

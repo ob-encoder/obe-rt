@@ -657,6 +657,7 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
         fprintf( stderr, "Couldn't create probe thread \n" );
         goto fail;
     }
+    pthread_setname_np(thread, "obe-probe");
 
     if( input_device->location )
         printf( "Probing device: \"%s\". ", input_device->location );
@@ -1008,6 +1009,7 @@ int obe_start( obe_t *h )
             fprintf( stderr, "Couldn't create output thread \n" );
             goto fail;
         }
+        pthread_setname_np(h->outputs[i]->output_thread, "obe-output");
     }
 
     /* Open Encoder Threads */
@@ -1049,6 +1051,7 @@ int obe_start( obe_t *h )
                     fprintf( stderr, "Couldn't create encode thread \n" );
                     goto fail;
                 }
+                pthread_setname_np(h->encoders[h->num_encoders]->encoder_thread, "obe-vid-encoder");
             }
             else if( h->output_streams[i].stream_format == AUDIO_AC_3 || h->output_streams[i].stream_format == AUDIO_E_AC_3 ||
                      h->output_streams[i].stream_format == AUDIO_AAC  || h->output_streams[i].stream_format == AUDIO_MP2 )
@@ -1098,6 +1101,7 @@ int obe_start( obe_t *h )
                     fprintf( stderr, "Couldn't create encode thread \n" );
                     goto fail;
                 }
+                pthread_setname_np(h->encoders[h->num_encoders]->encoder_thread, "obe-aud-encoder");
             }
 
             h->num_encoders++;
@@ -1112,6 +1116,7 @@ int obe_start( obe_t *h )
             fprintf( stderr, "Couldn't create encoder smoothing thread \n" );
             goto fail;
         }
+        pthread_setname_np(h->enc_smoothing_thread, "obe-enc-smoothing");
     }
 
     /* Open Mux Smoothing Thread */
@@ -1120,7 +1125,7 @@ int obe_start( obe_t *h )
         fprintf( stderr, "Couldn't create mux smoothing thread \n" );
         goto fail;
     }
-
+    pthread_setname_np(h->mux_smoothing_thread, "obe-mux-smoothing");
 
     /* Open Mux Thread */
     obe_mux_params_t *mux_params = calloc( 1, sizeof(*mux_params) );
@@ -1139,6 +1144,7 @@ int obe_start( obe_t *h )
         fprintf( stderr, "Couldn't create mux thread \n" );
         goto fail;
     }
+    pthread_setname_np(h->mux_thread, "obe-muxer");
 
     /* Open Filter Thread */
     for( int i = 0; i < h->devices[0]->num_input_streams; i++ )
@@ -1181,6 +1187,7 @@ int obe_start( obe_t *h )
                     fprintf( stderr, "Couldn't create video filter thread \n" );
                     goto fail;
                 }
+                pthread_setname_np(h->filters[h->num_filters]->filter_thread, "obe-vid-filter");
             }
             else
             {
@@ -1199,6 +1206,7 @@ int obe_start( obe_t *h )
                     fprintf( stderr, "Couldn't create filter thread \n" );
                     goto fail;
                 }
+                pthread_setname_np(h->filters[h->num_filters]->filter_thread, "obe-aud-filter");
             }
 
             h->num_filters++;
@@ -1225,6 +1233,7 @@ int obe_start( obe_t *h )
         fprintf( stderr, "Couldn't create input thread \n" );
         goto fail;
     }
+    pthread_setname_np(h->devices[0]->device_thread, "obe-device");
 
     h->is_active = 1;
 

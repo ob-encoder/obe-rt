@@ -462,13 +462,14 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             /* Some cards have restrictions on what lines can be accessed so try them all
              * Some buggy decklink cards will randomly refuse access to a particular line so
              * work around this issue by blanking the line */
-            if( ancillary->GetBufferForVerticalBlankingLine( line, &anc_line ) == S_OK )
-                decklink_ctx->unpack_line( (uint32_t*)anc_line, anc_buf_pos, width );
-            else
-                decklink_ctx->blank_line( anc_buf_pos, width );
+            if( ancillary->GetBufferForVerticalBlankingLine( line, &anc_line ) == S_OK ) {
 
-            /* Give libklvanc a chance to parse all vanc, and call our callbacks (same thread) */
-            convert_colorspace_and_parse_vanc(decklink_ctx->vanchdl, (unsigned char *)anc_line, stride, line);
+                /* Give libklvanc a chance to parse all vanc, and call our callbacks (same thread) */
+                convert_colorspace_and_parse_vanc(decklink_ctx->vanchdl, (unsigned char *)anc_line, stride, line);
+
+                decklink_ctx->unpack_line( (uint32_t*)anc_line, anc_buf_pos, width );
+            } else
+                decklink_ctx->blank_line( anc_buf_pos, width );
 
             anc_buf_pos += anc_line_stride / 2;
             anc_lines[num_anc_lines++] = line;

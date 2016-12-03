@@ -209,7 +209,9 @@ static void convert_colorspace_and_parse_vanc(struct vanc_context_s *vanchdl, un
 	 * decoded_words should be atleast 2 * uiWidth.
 	 */
 	uint16_t decoded_words[16384];
-	assert(uiWidth * 2 < sizeof(decoded_words));
+
+	/* On output each pixel will be decomposed into three 16-bit words (one for Y, U, V) */
+	assert(uiWidth * 6 < sizeof(decoded_words));
 
 	memset(&decoded_words[0], 0, sizeof(decoded_words));
 	uint16_t *p_anc = decoded_words;
@@ -465,7 +467,8 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             if( ancillary->GetBufferForVerticalBlankingLine( line, &anc_line ) == S_OK ) {
 
                 /* Give libklvanc a chance to parse all vanc, and call our callbacks (same thread) */
-                convert_colorspace_and_parse_vanc(decklink_ctx->vanchdl, (unsigned char *)anc_line, stride, line);
+                convert_colorspace_and_parse_vanc(decklink_ctx->vanchdl, (unsigned char *)anc_line,
+                                                  width, line);
 
                 decklink_ctx->unpack_line( (uint32_t*)anc_line, anc_buf_pos, width );
             } else
@@ -643,7 +646,8 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 	 * collect the single PES frame, pass it to the output TS mux.
 	 */
         if (decklink_ctx->smpte2038_ctx) {
-            if (smpte2038_packetizer_end(decklink_ctx->smpte2038_ctx) == 0) {
+            if (smpte2038_packetizer_end(decklink_ctx->smpte2038_ctx,
+                                         decklink_ctx->stream_time / 300) == 0) {
 
 #if 0
                 /* buf: smpte2038_ctx->buf count:smpte2038_ctx->bufused */

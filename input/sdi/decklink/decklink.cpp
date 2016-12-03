@@ -643,7 +643,8 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 	 * collect the single PES frame, pass it to the output TS mux.
 	 */
         if (decklink_ctx->smpte2038_ctx) {
-            if (smpte2038_packetizer_end(decklink_ctx->smpte2038_ctx) == 0) {
+            if (smpte2038_packetizer_end(decklink_ctx->smpte2038_ctx,
+                                         decklink_ctx->stream_time / 300) == 0) {
 
 #if 0
                 /* buf: smpte2038_ctx->buf count:smpte2038_ctx->bufused */

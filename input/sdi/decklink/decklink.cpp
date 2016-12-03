@@ -209,7 +209,9 @@ static void convert_colorspace_and_parse_vanc(struct vanc_context_s *vanchdl, un
 	 * decoded_words should be atleast 2 * uiWidth.
 	 */
 	uint16_t decoded_words[16384];
-	assert(uiWidth * 2 < sizeof(decoded_words));
+
+	/* On output each pixel will be decomposed into three 16-bit words (one for Y, U, V) */
+	assert(uiWidth * 6 < sizeof(decoded_words));
 
 	memset(&decoded_words[0], 0, sizeof(decoded_words));
 	uint16_t *p_anc = decoded_words;

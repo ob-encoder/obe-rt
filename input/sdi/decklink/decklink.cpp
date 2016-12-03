@@ -465,7 +465,8 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             if( ancillary->GetBufferForVerticalBlankingLine( line, &anc_line ) == S_OK ) {
 
                 /* Give libklvanc a chance to parse all vanc, and call our callbacks (same thread) */
-                convert_colorspace_and_parse_vanc(decklink_ctx->vanchdl, (unsigned char *)anc_line, stride, line);
+                convert_colorspace_and_parse_vanc(decklink_ctx->vanchdl, (unsigned char *)anc_line,
+                                                  width, line);
 
                 decklink_ctx->unpack_line( (uint32_t*)anc_line, anc_buf_pos, width );
             } else

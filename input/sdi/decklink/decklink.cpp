@@ -5,6 +5,11 @@
  *
  * Authors: Steinar H. Gunderson <steinar+vlc@gunderson.no>
  *
+ * SCTE35 / SCTE104 and general code hardening, debugging features et al.
+ * Copyright (C) 2015-2017 Kernel Labs Inc.
+ * Authors: Steven Toth <stoth@kernellabs.com>
+ * Authors: Devin J Heitmueller <dheitmueller@kernellabs.com>
+ *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either

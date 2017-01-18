@@ -967,7 +967,7 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 					scte35_generate_immediate_out_of_network(scte35,
 						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
 				} else
-				if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
+				if (d->splice_insert_type == SPLICEEND_IMMEDIATE) {
 					scte35_set_next_event_id(scte35,
 						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
 					scte35_generate_immediate_in_to_network(scte35,

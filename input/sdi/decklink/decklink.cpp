@@ -146,11 +146,6 @@ typedef struct
     /* LIBKLVANC handle / context */
     struct vanc_context_s *vanchdl;
 
-    /* TODO: Placeholder. SCTE35 message generation.
-     * Move this into some common core area so all SDI input
-     * benefit.
-     */
-    struct scte35_context_s scte35;
     BMDTimeValue stream_time;
 
     /* SMPTE2038 packetizer */
@@ -788,61 +783,6 @@ static int cb_EIA_708B(void *callback_context, struct vanc_context_s *ctx, struc
 		dump_EIA_708B(ctx, pkt); /* vanc lib helper */
 	}
 
-#if 0
-	/* Test some mux section parsing */
-	const unsigned char section[] = {
-		0xfc, 0x30, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
-		0x4f, 0x25, 0x33, 0x96 };
-	int seclen = sizeof(section);
-	obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, seclen);
-	if(!coded_frame) {
-		syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, seclen);
-		return -1;
-	}
-	coded_frame->pts = decklink_ctx->stream_time;
-	coded_frame->random_access = 1; /* ? */
-	memcpy(coded_frame->data, section, seclen);
-	add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
-#endif
-
-#if 0
-	/* TODO: Placeholder. We need some properly network in/out business logic.
-         * This eventually moves into the 104 processing callback.
-         * Here for testing purposes.
-         */
-
- 	struct scte35_context_s *scte35 = &decklink_ctx->scte35;
-
-	{
-		/* Generate a sample OUT OF NETWORK transition */
-		scte35_generate_immediate_out_of_network(scte35);
-
-		obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);
-		if (!coded_frame) {
-			syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
-			return -1;
-		}
-		coded_frame->pts = decklink_ctx->stream_time;
-		coded_frame->random_access = 1; /* ? */
-		memcpy(coded_frame->data, scte35->section, scte35->section_length);
-		add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
-	}
-
-	{
-		/* Generate a sample BACK TO NETWORK transition */
-		scte35_generate_immediate_in_to_network(scte35);
-		obe_coded_frame_t *coded_frame = new_coded_frame(2 /* encoder->output_stream_id */, scte35->section_length);
-		if (!coded_frame) {
-			syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
-			return -1;
-		}
-		coded_frame->pts = decklink_ctx->stream_time;
-		coded_frame->random_access = 1; /* ? */
-		memcpy(coded_frame->data, scte35->section, scte35->section_length);
-		add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
-	}
-#endif
 	return 0;
 }
 
@@ -871,23 +811,21 @@ static int findOutputStreamIdByFormat(decklink_ctx_t *decklink_ctx, enum stream_
 	return -1;
 }
  
-static int transmit_scte35_section_to_muxer(decklink_ctx_t *decklink_ctx)
+static int transmit_scte35_section_to_muxer(decklink_ctx_t *decklink_ctx, uint8_t *section, uint32_t section_length)
 {
- 	struct scte35_context_s *scte35 = &decklink_ctx->scte35;
-
 	int streamId = findOutputStreamIdByFormat(decklink_ctx, STREAM_TYPE_MISC, DVB_TABLE_SECTION);
 	if (streamId < 0)
 		return 0;
 
 	/* Now send the constructed frame to the mux */
-	obe_coded_frame_t *coded_frame = new_coded_frame(streamId, scte35->section_length);
+	obe_coded_frame_t *coded_frame = new_coded_frame(streamId, section_length);
 	if (!coded_frame) {
-		syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, scte35->section_length);
+		syslog(LOG_ERR, "Malloc failed during %s, needed %d bytes\n", __func__, section_length);
 		return -1;
 	}
 	coded_frame->pts = decklink_ctx->stream_time;
 	coded_frame->random_access = 1; /* ? */
-	memcpy(coded_frame->data, scte35->section, scte35->section_length);
+	memcpy(coded_frame->data, section, section_length);
 	add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
 
 	return 0;
@@ -929,24 +867,39 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 
 	if (m->opID == SO_INIT_REQUEST_DATA) {
 
-		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
- 		struct scte35_context_s *scte35 = &decklink_ctx->scte35;
-		if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
-			scte35_set_next_event_id(scte35,
-				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
-			scte35_generate_immediate_out_of_network(scte35,
-				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
+		uint8_t *section = 0;
+		uint32_t sectionLengthBytes;
+		int r = -1;
 
+		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
+		if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
+			r = scte35_generate_immediate_out_of_network(
+				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
+				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
+				&section, &sectionLengthBytes);
 		} else
 		if (d->splice_insert_type == SPLICEEND_IMMEDIATE) {
-			scte35_set_next_event_id(scte35,
-				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
-			scte35_generate_immediate_in_to_network(scte35,
-				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
+			r = scte35_generate_immediate_in_to_network(
+				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
+				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
+				&section, &sectionLengthBytes);
+		} else
+		if ((d->splice_insert_type == SPLICESTART_NORMAL) || (d->splice_insert_type == SPLICEEND_NORMAL)) {
+			fprintf(stderr, "No support for SCTE104 SO_INIT _NORMAL messages\n");
+		}
+		/* TODO: No support for SPLICESTART_NORMAL in SO formatted messages */
+
+		if (r < 0) {
+			fprintf(stderr, "Unable to create a SCTE35 section\n");
 		}
 
 		/* Now send the constructed frame to the mux */
-		transmit_scte35_section_to_muxer(decklink_ctx);
+		if (section) {
+			transmit_scte35_section_to_muxer(decklink_ctx, section, sectionLengthBytes);
+			free(section);
+		}
+
+
 	} else
 	if (m->opID == 0xFFFF /* Multiple Operation Message */) {
 
@@ -954,22 +907,41 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 			struct multiple_operation_message_operation *o = &mom->ops[i];
 			if (o->opID == MO_INIT_REQUEST_DATA) {
 
-				struct scte35_context_s *scte35 = &decklink_ctx->scte35;
+				uint8_t *section = 0;
+				uint32_t sectionLengthBytes;
+				int r = -1;
+
 				if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
-					scte35_set_next_event_id(scte35,
-						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
-					scte35_generate_immediate_out_of_network(scte35,
-						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
+					r = scte35_generate_immediate_out_of_network(
+						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
+						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
+						&section, &sectionLengthBytes);
 				} else
-				if (d->splice_insert_type == SPLICEEND_IMMEDIATE) {
-					scte35_set_next_event_id(scte35,
-						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt));
-					scte35_generate_immediate_in_to_network(scte35,
-						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt));
+				if (d->splice_insert_type == SPLICEEND_IMMEDIATE || d->splice_insert_type == SPLICEEND_NORMAL) {
+					r = scte35_generate_immediate_in_to_network(
+						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
+						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
+						&section, &sectionLengthBytes);
+				} else
+				if (d->splice_insert_type == SPLICESTART_NORMAL) {
+					r = scte35_generate_immediate_out_of_network_duration(
+						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
+						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
+						SCTE104_SR_DATA_FIELD__DURATION(pkt),
+						SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt),
+						&section, &sectionLengthBytes);
+
+				}
+				if (r < 0) {
+					fprintf(stderr, "Unable to create a SCTE35 section\n");
 				}
 
 				/* Now send the constructed frame to the mux */
-				transmit_scte35_section_to_muxer(decklink_ctx);
+				if (section) {
+					transmit_scte35_section_to_muxer(decklink_ctx, section, sectionLengthBytes);
+					free(section);
+				}
+
 			} else {
 				/* Unsupport message type */
 			}
@@ -1061,8 +1033,6 @@ static int open_card( decklink_opts_t *decklink_opts )
     }
 
     if (OPTION_ENABLED(scte35)) {
-        /* TODO: 123 PID NR */
-        scte35_initialize(&decklink_ctx->scte35, 0x0123);
         fprintf(stdout, "Enabling option SCTE35\n");
     } else
 	callbacks.scte_104 = NULL;

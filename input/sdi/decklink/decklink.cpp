@@ -195,7 +195,7 @@ static int transmit_pes_to_muxer(decklink_ctx_t *decklink_ctx, uint8_t *buf, uin
  * VANC parser. We'll expect our VANC message callbacks to happen on this
  * same calling thread.
  */
-static void convert_colorspace_and_parse_vanc(struct vanc_context_s *vanchdl, unsigned char *buf, unsigned int uiWidth, unsigned int lineNr)
+static void convert_colorspace_and_parse_vanc(decklink_ctx_t *decklink_ctx, struct vanc_context_s *vanchdl, unsigned char *buf, unsigned int uiWidth, unsigned int lineNr)
 {
 	/* Convert the vanc line from V210 to CrCB422, then vanc parse it */
 
@@ -209,17 +209,34 @@ static void convert_colorspace_and_parse_vanc(struct vanc_context_s *vanchdl, un
 	 * decoded_words should be atleast 2 * uiWidth.
 	 */
 	uint16_t decoded_words[16384];
-	assert(uiWidth * 2 < sizeof(decoded_words));
+
+	/* On output each pixel will be decomposed into three 16-bit words (one for Y, U, V) */
+	assert(uiWidth * 6 < sizeof(decoded_words));
 
 	memset(&decoded_words[0], 0, sizeof(decoded_words));
 	uint16_t *p_anc = decoded_words;
 	if (klvanc_v210_line_to_nv20_c(src, p_anc, sizeof(decoded_words), (uiWidth / 6) * 6) < 0)
 		return;
 
+    if (decklink_ctx->smpte2038_ctx)
+        smpte2038_packetizer_begin(decklink_ctx->smpte2038_ctx);
+
 	int ret = vanc_packet_parse(vanchdl, lineNr, decoded_words, sizeof(decoded_words) / (sizeof(unsigned short)));
 	if (ret < 0) {
-		/* No VANC on this line */
+        /* No VANC on this line */
 	}
+
+    if (decklink_ctx->smpte2038_ctx) {
+        if (smpte2038_packetizer_end(decklink_ctx->smpte2038_ctx,
+                                     decklink_ctx->stream_time / 300) == 0) {
+
+            if (transmit_pes_to_muxer(decklink_ctx, decklink_ctx->smpte2038_ctx->buf,
+                                      decklink_ctx->smpte2038_ctx->bufused) < 0) {
+                fprintf(stderr, "%s() failed to xmit PES to muxer\n", __func__);
+            }
+        }
+    }
+
 }
 
 static void setup_pixel_funcs( decklink_opts_t *decklink_opts )
@@ -395,10 +412,6 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     if( videoframe )
     {
-        /* At the beginning of each video frame, prepare the smpte2038 packetizer */
-        if (decklink_ctx->smpte2038_ctx)
-            smpte2038_packetizer_begin(decklink_ctx->smpte2038_ctx);
-
         if( videoframe->GetFlags() & bmdFrameHasNoInputSource )
         {
             syslog( LOG_ERR, "Decklink card index %i: No input signal detected", decklink_opts_->card_idx );
@@ -465,7 +478,8 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             if( ancillary->GetBufferForVerticalBlankingLine( line, &anc_line ) == S_OK ) {
 
                 /* Give libklvanc a chance to parse all vanc, and call our callbacks (same thread) */
-                convert_colorspace_and_parse_vanc(decklink_ctx->vanchdl, (unsigned char *)anc_line, stride, line);
+                convert_colorspace_and_parse_vanc(decklink_ctx, decklink_ctx->vanchdl,
+                                                  (unsigned char *)anc_line, width, line);
 
                 decklink_ctx->unpack_line( (uint32_t*)anc_line, anc_buf_pos, width );
             } else
@@ -638,31 +652,6 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             decklink_ctx->non_display_parser.num_vbi = 0;
             decklink_ctx->non_display_parser.num_anc_vbi = 0;
         }
-
-        /* At the end of each video frame, complete the smpte2038 packetizer.
-	 * collect the single PES frame, pass it to the output TS mux.
-	 */
-        if (decklink_ctx->smpte2038_ctx) {
-            if (smpte2038_packetizer_end(decklink_ctx->smpte2038_ctx) == 0) {
-
-#if 0
-                /* buf: smpte2038_ctx->buf count:smpte2038_ctx->bufused */
-                static int idx = 0;
-                char fn[64];
-                sprintf(fn, "/tmp/pes%08d.bin", idx++);
-                FILE *fh = fopen(fn, "a+");
-                if (fh) {
-                    printf("Writing SMPTE2038 PES to %s\n", fn);
-                    fwrite(decklink_ctx->smpte2038_ctx->buf, 1, decklink_ctx->smpte2038_ctx->bufused, fh);
-                    fclose(fh);
-                }
-#endif
-		if (transmit_pes_to_muxer(decklink_ctx, decklink_ctx->smpte2038_ctx->buf, decklink_ctx->smpte2038_ctx->bufused) < 0) {
-			fprintf(stderr, "%s() failed to xmit PES to muxer\n", __func__);
-		}
-            }
-        }
-
     } /* if video frame */
 
     /* TODO: probe SMPTE 337M audio */

@@ -112,6 +112,7 @@ typedef struct
 
     int enable_smpte2038;
     int enable_scte35;
+    int enable_vanc_cache;
 } obe_input_t;
 
 /**** Stream Formats ****/

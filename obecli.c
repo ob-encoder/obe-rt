@@ -86,7 +86,7 @@ static const char * const addable_streams[]          = { "audio", "ttx" };
 
 static const char * system_opts[] = { "system-type", NULL };
 static const char * input_opts[]  = { "location", "card-idx", "video-format", "video-connection", "audio-connection",
-                                      "smpte2038", "scte35", NULL };
+                                      "smpte2038", "scte35", "vanc_cache", NULL };
 static const char * add_opts[] =    { "type" };
 /* TODO: split the stream options into general options, video options, ts options */
 static const char * stream_opts[] = { "action", "format",
@@ -522,6 +522,7 @@ static int set_input( char *command, obecli_command_t *child )
         char *audio_connection = obe_get_option( input_opts[4], opts );
         char *smpte2038 = obe_get_option( input_opts[5], opts );
         char *scte35 = obe_get_option( input_opts[6], opts );
+        char *vanc_cache = obe_get_option( input_opts[7], opts );
 
         FAIL_IF_ERROR( video_format && ( check_enum_value( video_format, input_video_formats ) < 0 ),
                        "Invalid video format\n" );
@@ -544,6 +545,7 @@ static int set_input( char *command, obecli_command_t *child )
 
         cli.input.enable_smpte2038 = obe_otoi( smpte2038, cli.input.enable_smpte2038 );
         cli.input.enable_scte35 = obe_otoi( scte35, cli.input.enable_scte35 );
+        cli.input.enable_vanc_cache = obe_otoi( vanc_cache, cli.input.enable_vanc_cache );
         cli.input.card_idx = obe_otoi( card_idx, cli.input.card_idx );
         if( video_format )
             parse_enum_value( video_format, input_video_formats, &cli.input.video_format );

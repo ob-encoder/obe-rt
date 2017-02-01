@@ -145,6 +145,8 @@ typedef struct
 
     /* LIBKLVANC handle / context */
     struct vanc_context_s *vanchdl;
+#define VANC_CACHE_DUMP_INTERVAL 60
+    time_t last_vanc_cache_dump;
 
     BMDTimeValue stream_time;
 
@@ -166,8 +168,10 @@ typedef struct
     int num_channels;
     int probe;
 #define OPTION_ENABLED(opt) (decklink_opts->enable_##opt)
+#define OPTION_ENABLED_(opt) (decklink_opts_->enable_##opt)
     int enable_smpte2038;
     int enable_scte35;
+    int enable_vanc_cache;
 
     /* Output */
     int probe_success;
@@ -188,6 +192,24 @@ struct decklink_status
     obe_input_params_t *input;
     decklink_opts_t *decklink_opts;
 };
+
+void kllog(const char *category, const char *format, ...)
+{
+    char buf[2048] = { 0 };
+    struct timeval tv;
+    gettimeofday(&tv, 0);
+
+    //sprintf(buf, "%08d.%03d : OBE : ", (unsigned int)tv.tv_sec, (unsigned int)tv.tv_usec / 1000);
+    sprintf(buf, "OBE-%s : ", category);
+
+    va_list vl;
+    va_start(vl,format);
+    vsprintf(&buf[strlen(buf)], format, vl);
+    va_end(vl);
+
+    syslog(LOG_INFO, "%s", buf);
+    fprintf(stdout, "%s", buf);
+}
 
 static int transmit_pes_to_muxer(decklink_ctx_t *decklink_ctx, uint8_t *buf, uint32_t byteCount);
 
@@ -388,6 +410,27 @@ private:
     decklink_opts_t *decklink_opts_;
 };
 
+static void _vanc_cache_dump(decklink_ctx_t *ctx)
+{
+    for (int d = 0; d <= 0xff; d++) {
+        for (int s = 0; s <= 0xff; s++) {
+            struct vanc_cache_s *e = vanc_cache_lookup(ctx->vanchdl, d, s);
+            if (!e)
+                continue;
+
+            if (e->activeCount == 0)
+                continue;
+
+            for (int l = 0; l < 2048; l++) {
+                if (e->lines[l].active) {
+                    kllog("VANC", "->did/sdid = %02x / %02x: %s [%s] via SDI line %d (%" PRIu64 " packets)\n",
+                        e->did, e->sdid, e->desc, e->spec, l, e->lines[l].count);
+                }
+            }
+        }
+    }
+}
+
 HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFrame *videoframe, IDeckLinkAudioInputPacket *audioframe )
 {
     decklink_ctx_t *decklink_ctx = &decklink_opts_->decklink_ctx;
@@ -407,6 +450,13 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     if( decklink_opts_->probe_success )
         return S_OK;
+
+    if (OPTION_ENABLED_(vanc_cache)) {
+        if (decklink_ctx->last_vanc_cache_dump + VANC_CACHE_DUMP_INTERVAL <= time(0)) {
+            decklink_ctx->last_vanc_cache_dump = time(0);
+            _vanc_cache_dump(decklink_ctx);
+        }
+    }
 
     av_init_packet( &pkt );
 
@@ -1030,6 +1080,14 @@ static int open_card( decklink_opts_t *decklink_opts )
         decklink_ctx->vanchdl->verbose = 0;
         decklink_ctx->vanchdl->callbacks = &callbacks;
         decklink_ctx->vanchdl->callback_context = decklink_ctx;
+        decklink_ctx->last_vanc_cache_dump = 0;
+
+        if (OPTION_ENABLED(vanc_cache)) {
+            /* Turn on the vanc cache, we'll want to query it later. */
+            decklink_ctx->last_vanc_cache_dump = 1;
+            fprintf(stdout, "Enabling option VANC CACHE, interval %d seconds\n", VANC_CACHE_DUMP_INTERVAL);
+            vanc_context_enable_cache(decklink_ctx->vanchdl);
+        }
     }
 
     if (OPTION_ENABLED(scte35)) {
@@ -1373,6 +1431,7 @@ static void *probe_stream( void *ptr )
     decklink_opts->video_format = user_opts->video_format;
     decklink_opts->enable_smpte2038 = user_opts->enable_smpte2038;
     decklink_opts->enable_scte35 = user_opts->enable_scte35;
+    decklink_opts->enable_vanc_cache = user_opts->enable_vanc_cache;
 
     decklink_opts->probe = non_display_parser->probe = 1;
 
@@ -1573,6 +1632,7 @@ static void *open_input( void *ptr )
     decklink_opts->video_format = user_opts->video_format;
     decklink_opts->enable_smpte2038 = user_opts->enable_smpte2038;
     decklink_opts->enable_scte35 = user_opts->enable_scte35;
+    decklink_opts->enable_vanc_cache = user_opts->enable_vanc_cache;
 
     decklink_ctx = &decklink_opts->decklink_ctx;
 

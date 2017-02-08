@@ -242,9 +242,6 @@ typedef struct
 
     /** Misc **/
     int source; /* e.g. VBI/VANC */
-
-    /* KL / Sections */
-    int section_output_pid;
 }obe_input_stream_t;
 
 typedef struct

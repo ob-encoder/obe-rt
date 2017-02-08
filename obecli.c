@@ -108,7 +108,7 @@ static const char * stream_opts[] = { "action", "format",
                                       "vbi-ttx", "vbi-inv-ttx", "vbi-vps", "vbi-wss",
                                       NULL };
 static const char * muxer_opts[]  = { "ts-type", "cbr", "ts-muxrate", "passthrough", "ts-id", "program-num", "pmt-pid", "pcr-pid",
-                                      "pcr-period", "pat-period", "service-name", "provider-name", NULL };
+                                      "pcr-period", "pat-period", "service-name", "provider-name", "scte35-pid", "smpte2038-pid", NULL };
 static const char * ts_types[]    = { "generic", "dvb", "cablelabs", "atsc", "isdb", NULL };
 static const char * output_opts[] = { "type", "target", NULL };
 
@@ -902,6 +902,8 @@ static int set_muxer( char *command, obecli_command_t *child )
         char *pat_period  = obe_get_option( muxer_opts[9], opts );
         char *service_name  = obe_get_option( muxer_opts[10], opts );
         char *provider_name = obe_get_option( muxer_opts[11], opts );
+        char *scte35_pid    = obe_get_option( muxer_opts[12], opts );
+        char *smpte2038_pid = obe_get_option( muxer_opts[13], opts );
 
         FAIL_IF_ERROR( ts_type && ( check_enum_value( ts_type, ts_types ) < 0 ),
                       "Invalid AVC profile\n" );
@@ -919,6 +921,8 @@ static int set_muxer( char *command, obecli_command_t *child )
         cli.mux_opts.pcr_pid    = obe_otoi( pcr_pid, cli.mux_opts.pcr_pid  );
         cli.mux_opts.pcr_period = obe_otoi( pcr_period, cli.mux_opts.pcr_period );
         cli.mux_opts.pat_period = obe_otoi( pat_period, cli.mux_opts.pat_period );
+        cli.mux_opts.scte35_pid = obe_otoi( scte35_pid, cli.mux_opts.scte35_pid );
+        cli.mux_opts.smpte2038_pid = obe_otoi( smpte2038_pid, cli.mux_opts.smpte2038_pid );
 
         if( service_name )
         {
@@ -1327,6 +1331,15 @@ static int start_encode( char *command, obecli_command_t *child )
             input_stream = &cli.program.streams[output_stream->input_stream_id];
         else
             input_stream = NULL;
+        if (input_stream->stream_type == STREAM_TYPE_MISC && input_stream->stream_format == SMPTE2038) {
+            if (cli.mux_opts.smpte2038_pid)
+                output_stream->ts_opts.pid = cli.mux_opts.smpte2038_pid;
+        } else
+        if (input_stream->stream_format == DVB_TABLE_SECTION) {
+            if (cli.mux_opts.scte35_pid)
+                output_stream->ts_opts.pid = cli.mux_opts.scte35_pid;
+        }
+
         if( input_stream && input_stream->stream_type == STREAM_TYPE_VIDEO )
         {
             /* x264 calculates the single-frame VBV size later on */

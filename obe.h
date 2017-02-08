@@ -480,6 +480,8 @@ typedef struct
     int program_num;
     int pmt_pid;
     int pcr_pid;
+    int scte35_pid;
+    int smpte2038_pid;
 
     int pcr_period;
     int pat_period;

@@ -1255,11 +1255,11 @@ static int show_input_streams( char *command, obecli_command_t *child )
         }
         else if(stream->stream_format == DVB_TABLE_SECTION)
         {
-            printf( "Input-stream-id: %d - DVB Table Section: Pid 0x%04x\n", stream->input_stream_id, stream->section_output_pid);
+            printf( "Input-stream-id: %d - DVB Table Section\n", stream->input_stream_id);
         }
         else if(stream->stream_format == SMPTE2038)
         {
-            printf( "Input-stream-id: %d - PES_PRIVATE_1 SMPTE2038: Pid 0x%04x\n", stream->input_stream_id, stream->section_output_pid);
+            printf( "Input-stream-id: %d - PES_PRIVATE_1 SMPTE2038\n", stream->input_stream_id);
         }
         else
             printf( "Input-stream-id: %d \n", stream->input_stream_id );

@@ -86,7 +86,7 @@ static const char * const addable_streams[]          = { "audio", "ttx" };
 
 static const char * system_opts[] = { "system-type", NULL };
 static const char * input_opts[]  = { "location", "card-idx", "video-format", "video-connection", "audio-connection",
-                                      "smpte2038", "scte35", "vanc_cache", NULL };
+                                      "smpte2038", "scte35", "vanc-cache", NULL };
 static const char * add_opts[] =    { "type" };
 /* TODO: split the stream options into general options, video options, ts options */
 static const char * stream_opts[] = { "action", "format",

@@ -962,6 +962,7 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 				int r = -1;
 
 				/* No support for SCTE104 pre-roll */
+				/* No support for SCTE104 splice_cancel */
 				if ((d->splice_insert_type == SPLICESTART_IMMEDIATE) || (d->splice_insert_type == SPLICESTART_NORMAL)) {
 					r = scte35_generate_immediate_out_of_network_duration(
 						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),

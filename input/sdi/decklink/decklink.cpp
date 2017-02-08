@@ -911,6 +911,11 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 		dump_SCTE_104(ctx, pkt); /* vanc library helper */
 	}
 
+	if (vanc_packetType1(&pkt->hdr)) {
+		/* Silently discard type 1 SCTE104 packets, as per SMPTE 291 section 6.3 */
+		return 0;
+	}
+
 	struct multiple_operation_message *mom = &pkt->mo_msg;
 	struct single_operation_message *m = &pkt->so_msg;
 	struct splice_request_data *d = &pkt->sr_data;

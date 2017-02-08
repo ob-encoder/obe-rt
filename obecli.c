@@ -917,12 +917,12 @@ static int set_muxer( char *command, obecli_command_t *child )
         cli.mux_opts.passthrough = obe_otob( passthrough, cli.mux_opts.passthrough );
         cli.mux_opts.ts_id = obe_otoi( ts_id, cli.mux_opts.ts_id );
         cli.mux_opts.program_num = obe_otoi( program_num, cli.mux_opts.program_num );
-        cli.mux_opts.pmt_pid    = obe_otoi( pmt_pid, cli.mux_opts.pmt_pid );
-        cli.mux_opts.pcr_pid    = obe_otoi( pcr_pid, cli.mux_opts.pcr_pid  );
+        cli.mux_opts.pmt_pid    = obe_otoi( pmt_pid, cli.mux_opts.pmt_pid ) & 0x1fff;
+        cli.mux_opts.pcr_pid    = obe_otoi( pcr_pid, cli.mux_opts.pcr_pid  ) & 0x1fff;
         cli.mux_opts.pcr_period = obe_otoi( pcr_period, cli.mux_opts.pcr_period );
         cli.mux_opts.pat_period = obe_otoi( pat_period, cli.mux_opts.pat_period );
-        cli.mux_opts.scte35_pid = obe_otoi( scte35_pid, cli.mux_opts.scte35_pid );
-        cli.mux_opts.smpte2038_pid = obe_otoi( smpte2038_pid, cli.mux_opts.smpte2038_pid );
+        cli.mux_opts.scte35_pid = obe_otoi( scte35_pid, cli.mux_opts.scte35_pid ) & 0x1fff;
+        cli.mux_opts.smpte2038_pid = obe_otoi( smpte2038_pid, cli.mux_opts.smpte2038_pid ) & 0x1fff;
 
         if( service_name )
         {

@@ -928,10 +928,10 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 
 		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
 		if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
-			r = scte35_generate_immediate_out_of_network(
+			r = scte35_generate_out_of_network(
 				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
 				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-				&section, &sectionLengthBytes);
+				&section, &sectionLengthBytes, 1);
 		} else
 		if (d->splice_insert_type == SPLICEEND_IMMEDIATE) {
 			r = scte35_generate_immediate_in_to_network(
@@ -968,13 +968,21 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 
 				/* No support for SCTE104 pre-roll */
 				/* No support for SCTE104 splice_cancel */
-				if ((d->splice_insert_type == SPLICESTART_IMMEDIATE) || (d->splice_insert_type == SPLICESTART_NORMAL)) {
-					r = scte35_generate_immediate_out_of_network_duration(
+				if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
+					r = scte35_generate_out_of_network_duration(
 						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
 						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
 						SCTE104_SR_DATA_FIELD__DURATION(pkt),
 						SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt),
-						&section, &sectionLengthBytes);
+						&section, &sectionLengthBytes, 1);
+				} else
+				if (d->splice_insert_type == SPLICESTART_NORMAL) {
+					r = scte35_generate_out_of_network_duration(
+						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
+						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
+						SCTE104_SR_DATA_FIELD__DURATION(pkt),
+						SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt),
+						&section, &sectionLengthBytes, 0);
 				} else
 				if (d->splice_insert_type == SPLICEEND_IMMEDIATE || d->splice_insert_type == SPLICEEND_NORMAL) {
 					r = scte35_generate_immediate_in_to_network(

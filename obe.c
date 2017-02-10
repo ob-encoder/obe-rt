@@ -688,7 +688,7 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
     {
         fprintf( stderr, "Could not probe device \n" );
         program = NULL;
-        return -1;
+        goto fail;
     }
 
     // TODO metadata etc
@@ -697,7 +697,7 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
     if( !program->streams )
     {
         fprintf( stderr, "Malloc failed \n" );
-        return -1;
+        goto fail;
     }
 
     h->devices[h->num_devices-1]->probed_streams = program->streams;

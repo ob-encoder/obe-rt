@@ -931,13 +931,17 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 			r = scte35_generate_out_of_network(
 				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
 				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-				&section, &sectionLengthBytes, 1);
+				&section, &sectionLengthBytes, 1,
+				SCTE104_SR_DATA_FIELD__AVAIL_NUM(pkt),
+				SCTE104_SR_DATA_FIELD__AVAILS_EXPECTED(pkt));
 		} else
 		if (d->splice_insert_type == SPLICEEND_IMMEDIATE) {
 			r = scte35_generate_immediate_in_to_network(
 				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
 				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-				&section, &sectionLengthBytes);
+				&section, &sectionLengthBytes,
+				SCTE104_SR_DATA_FIELD__AVAIL_NUM(pkt),
+				SCTE104_SR_DATA_FIELD__AVAILS_EXPECTED(pkt));
 		} else
 		if ((d->splice_insert_type == SPLICESTART_NORMAL) || (d->splice_insert_type == SPLICEEND_NORMAL)) {
 			fprintf(stderr, "No support for SCTE104 SO_INIT _NORMAL messages\n");
@@ -974,7 +978,9 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
 						SCTE104_SR_DATA_FIELD__DURATION(pkt),
 						SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt),
-						&section, &sectionLengthBytes, 1);
+						&section, &sectionLengthBytes, 1,
+						SCTE104_SR_DATA_FIELD__AVAIL_NUM(pkt),
+						SCTE104_SR_DATA_FIELD__AVAILS_EXPECTED(pkt));
 				} else
 				if (d->splice_insert_type == SPLICESTART_NORMAL) {
 					r = scte35_generate_out_of_network_duration(
@@ -982,13 +988,17 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
 						SCTE104_SR_DATA_FIELD__DURATION(pkt),
 						SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt),
-						&section, &sectionLengthBytes, 0);
+						&section, &sectionLengthBytes, 0,
+						SCTE104_SR_DATA_FIELD__AVAIL_NUM(pkt),
+						SCTE104_SR_DATA_FIELD__AVAILS_EXPECTED(pkt));
 				} else
 				if (d->splice_insert_type == SPLICEEND_IMMEDIATE || d->splice_insert_type == SPLICEEND_NORMAL) {
 					r = scte35_generate_immediate_in_to_network(
 						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
 						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-						&section, &sectionLengthBytes);
+						&section, &sectionLengthBytes,
+						SCTE104_SR_DATA_FIELD__AVAIL_NUM(pkt),
+						SCTE104_SR_DATA_FIELD__AVAILS_EXPECTED(pkt));
 				}
 				if (r < 0) {
 					fprintf(stderr, "Unable to create a SCTE35 section\n");

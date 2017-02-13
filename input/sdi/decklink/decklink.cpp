@@ -964,7 +964,7 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 
 		for (int i = 0; i < mom->num_ops; i++) {
 			struct multiple_operation_message_operation *o = &mom->ops[i];
-			if (o->opID == MO_INIT_REQUEST_DATA) {
+			if (o->opID == MO_SPLICE_REQUEST_DATA) {
 
 				uint8_t *section = 0;
 				uint32_t sectionLengthBytes;

@@ -31,6 +31,9 @@
 #include "mux/mux.h"
 #include "output/output.h"
 
+/* Avoid a minor compiler warning and defining GNU_SOURCE */
+extern int pthread_setname_np(pthread_t thread, const char *name);
+
 /** Utilities **/
 int64_t obe_mdate( void )
 {

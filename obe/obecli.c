@@ -1562,7 +1562,7 @@ int main( int argc, char **argv )
 
     printf( "\nOpen Broadcast Encoder command line interface.\n" );
     printf( "Including Kernel Labs fixups.\n" );
-    printf( "Version 1.4\n" );
+    printf( "Version 1.5 (" GIT_VERSION ")\n");
     printf( "\n" );
 
     while( 1 )

@@ -21,6 +21,7 @@
  *
  *****************************************************************************/
 
+#if 0
 #define 337M_SYNCWORD_1_16_BIT 0xf872
 #define 337M_SYNCWORD_1_20_BIT 0x6f872
 #define 337M_SYNCWORD_1_24_BIT 0x96f872
@@ -39,3 +40,4 @@
 #define 337M_DATA_TYPE_E_DIST    28
 
 // 337M startcode search function TODO
+#endif

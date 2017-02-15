@@ -54,9 +54,14 @@ depcomp
 install-sh
 libtool
 ltmain.sh
+Makefile
+config.guess
+config.sub
+configure
 m4/
 missing
 obe/.deps/
 obe/Makefile
 obe/Makefile.in
 obe/obecli
+

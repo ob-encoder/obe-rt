@@ -25,6 +25,12 @@
 #include "encoders/video/video.h"
 #include <libavutil/mathematics.h>
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+#include <libklmonitoring/klmonitoring.h>
+static struct kl_histogram frame_encode;
+static int histogram_dump = 0;
+#endif
+
 static void x264_logger( void *p_unused, int i_level, const char *psz_fmt, va_list arg )
 {
     if( i_level <= X264_LOG_INFO )
@@ -100,6 +106,10 @@ static int convert_obe_to_x264_pic( x264_picture_t *pic, obe_raw_frame_t *raw_fr
 
 static void *start_encoder( void *ptr )
 {
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+    kl_histogram_reset(&frame_encode, "video frame encode", KL_BUCKET_VIDEO);
+#endif
+
     obe_vid_enc_params_t *enc_params = ptr;
     obe_t *h = enc_params->h;
     obe_encoder_t *encoder = enc_params->encoder;
@@ -236,7 +246,17 @@ static void *start_encoder( void *ptr )
             pthread_mutex_unlock( &h->enc_smoothing_queue.mutex );
         }
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+	kl_histogram_sample_begin(&frame_encode);
+#endif
         frame_size = x264_encoder_encode( s, &nal, &i_nal, &pic, &pic_out );
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+	kl_histogram_sample_complete(&frame_encode);
+	if (histogram_dump++ > 240) {
+		histogram_dump = 0;
+		kl_histogram_printf(&frame_encode);
+	}
+#endif
 
         arrival_time = raw_frame->arrival_time;
         raw_frame->release_data( raw_frame );

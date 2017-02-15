@@ -30,8 +30,17 @@
 
 #define MP2_AUDIO_BUFFER_SIZE 50000
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+#include <libklmonitoring/klmonitoring.h>
+static struct kl_histogram audio_encode;
+static int histogram_dump = 0;
+#endif
+
 static void *start_encoder( void *ptr )
 {
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+    kl_histogram_reset(&audio_encode, "audio frame encode", KL_BUCKET_VIDEO);
+#endif
     obe_aud_enc_params_t *enc_params = ptr;
     obe_t *h = enc_params->h;
     obe_encoder_t *encoder = enc_params->encoder;
@@ -149,7 +158,17 @@ static void *start_encoder( void *ptr )
 
         avresample_read( avr, (uint8_t**)&audio_buf, avresample_available( avr ) );
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_sample_begin(&audio_encode);
+#endif
         output_size = twolame_encode_buffer_float32_interleaved( tl_opts, audio_buf, raw_frame->audio_frame.num_samples, output_buf, MP2_AUDIO_BUFFER_SIZE );
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_sample_complete(&audio_encode);
+        if (histogram_dump++ > 240) {
+                histogram_dump = 0;
+                kl_histogram_printf(&audio_encode);
+        }
+#endif
 
         if( output_size < 0 )
         {

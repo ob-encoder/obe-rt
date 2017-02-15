@@ -25,7 +25,7 @@ AX_PROG_YASM()
 # We always build with -fPIC in case our static libraries end up
 # being linked into a consumer's shared library
 AC_MSG_CHECKING(whether fPIC compiler option is accepted)
-SAVED_CFLAGS="$CFLAGS"
+SAVED_CFLAGS="$CFLAGS -DKL_USERSPACE"
 CFLAGS="$CFLAGS -fPIC -Werror"
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [return 0;])],
     [AC_MSG_RESULT(yes)
@@ -73,11 +73,11 @@ AC_CHECK_HEADERS([twolame.h],
                  [AC_MSG_ERROR([libtwolame headers not found or not usable])])
 
 # Check for curses (optional)
-AC_CHECK_HEADERS([curses.h], HEADER_LIBCURSES="yes")
-if test "x$HEADER_LIBCURSES" == "xyes" ; then
-    LDFLAGS+=" -lcurses "
+AC_CHECK_HEADERS([libklmonitoring/klmonitoring.h], HEADER_LIBKLMONITORING="yes")
+if test "x$HEADER_LIBKLMONITORING" == "xyes" ; then
+    LDFLAGS+=" -lklmonitoring "
 fi
-AM_CONDITIONAL(LIBCURSES, test x"$HEADER_LIBCURSES" == x"yes")
+AM_CONDITIONAL(LIBKLMONITORING, test x"$HEADER_LIBKLMONITORING" == x"yes")
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UINT16_T

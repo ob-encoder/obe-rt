@@ -48,6 +48,12 @@ extern "C"
 #include <include/DeckLinkAPI.h>
 #include "include/DeckLinkAPIDispatch.cpp"
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+#include <libklmonitoring/klmonitoring.h>
+static struct kl_histogram frame_interval;
+static int histogram_dump = 0;
+#endif
+
 #define DECKLINK_VANC_LINES 100
 
 struct obe_to_decklink
@@ -462,6 +468,14 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     if( videoframe )
     {
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_update(&frame_interval);
+        if (histogram_dump++ > 240) {
+                histogram_dump = 0;
+                kl_histogram_printf(&frame_interval);
+        }
+#endif
+
         if( videoframe->GetFlags() & bmdFrameHasNoInputSource )
         {
             syslog( LOG_ERR, "Decklink card index %i: No input signal detected", decklink_opts_->card_idx );
@@ -1067,6 +1081,9 @@ static struct vanc_callbacks_s callbacks =
 
 static int open_card( decklink_opts_t *decklink_opts )
 {
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+    kl_histogram_reset(&frame_interval, "video frame intervals", KL_BUCKET_VIDEO);
+#endif
     decklink_ctx_t *decklink_ctx = &decklink_opts->decklink_ctx;
     int         found_mode;
     int         ret = 0;

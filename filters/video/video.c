@@ -31,6 +31,12 @@
 #include "x86/vfilter.h"
 #include "input/sdi/sdi.h"
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+#include <libklmonitoring/klmonitoring.h>
+static struct kl_histogram filter_encode;
+static int histogram_dump = 0;
+#endif
+
 
 #if X264_BIT_DEPTH > 8
 typedef uint16_t pixel;
@@ -673,6 +679,10 @@ static int encapsulate_user_data( obe_raw_frame_t *raw_frame, obe_int_input_stre
 
 static void *start_filter( void *ptr )
 {
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+    kl_histogram_reset(&filter_encode, "video frame filter", KL_BUCKET_VIDEO);
+#endif
+
     obe_vid_filter_params_t *filter_params = ptr;
     obe_t *h = filter_params->h;
     obe_filter_t *filter = filter_params->filter;
@@ -710,6 +720,9 @@ static void *start_filter( void *ptr )
         raw_frame = filter->queue.queue[0];
         pthread_mutex_unlock( &filter->queue.mutex );
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_sample_begin(&filter_encode);
+#endif
         /* TODO: scale 8-bit to 10-bit
          * TODO: convert from 4:2:0 to 4:2:2 */
 
@@ -743,6 +756,14 @@ static void *start_filter( void *ptr )
 
         if( encapsulate_user_data( raw_frame, input_stream ) < 0 )
             goto end;
+
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_sample_complete(&filter_encode);
+        if (histogram_dump++ > 240) {
+                histogram_dump = 0;
+                kl_histogram_printf(&filter_encode);
+        }
+#endif
 
         /* If SAR, on an SD stream, has not been updated by AFD or WSS, set to default 4:3
          * TODO: make this user-choosable. OBE will prioritise any SAR information from AFD or WSS over any user settings */

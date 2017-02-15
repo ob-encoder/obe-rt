@@ -27,8 +27,6 @@
 #include <math.h>
 #include <assert.h>
 
-#include "config.h"
-
 #include <signal.h>
 #define _GNU_SOURCE
 

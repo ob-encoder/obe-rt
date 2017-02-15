@@ -8,7 +8,8 @@ CFLAGS += -Wall -DVERSION=\"$(VERSION)\" -DPROG="\"$(PACKAGE)\"" -D_FILE_OFFSET_
 	-I$(BLACKMAGIC_SDK_PATH) \
 	-I$(top_srcdir) \
 	-DKL_USERSPACE -D__STDC_FORMAT_MACROS \
-	-DGIT_VERSION=\"$(GIT_VERSION)\"
+	-DGIT_VERSION=\"$(GIT_VERSION)\" \
+	-DHAVE_DECKLINK
 
 LDFLAGS += -lpthread -lz -lx264 -lyuv
 LDFLAGS += -lavformat -lavcodec -lavresample -ldl -lasound -lfdk-aac -lbz2 -lz -lswscale -lavutil -lm

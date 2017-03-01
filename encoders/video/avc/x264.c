@@ -37,9 +37,15 @@ static void x264_logger( void *p_unused, int i_level, const char *psz_fmt, va_li
         vsyslog( i_level == X264_LOG_INFO ? LOG_INFO : i_level == X264_LOG_WARNING ? LOG_WARNING : LOG_ERR, psz_fmt, arg );
 }
 
+/* Convert a obe_raw_frame_t into a x264_picture_t struct.
+ * Incoming frame is colorspace YUV420P.
+ */
 static int convert_obe_to_x264_pic( x264_picture_t *pic, obe_raw_frame_t *raw_frame )
 {
     obe_image_t *img = &raw_frame->img;
+#if 0
+PRINT_OBE_IMAGE(img, "      X264->img");
+#endif
     int idx = 0, count = 0;
 
     x264_picture_init( pic );
@@ -187,6 +193,7 @@ static void *start_encoder( void *ptr )
         raw_frame = encoder->queue.queue[0];
         pthread_mutex_unlock( &encoder->queue.mutex );
 
+        /* convert obe_frame_t into x264 friendly struct */
         if( convert_obe_to_x264_pic( &pic, raw_frame ) < 0 )
         {
             syslog( LOG_ERR, "Malloc failed\n" );

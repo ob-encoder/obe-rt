@@ -207,6 +207,15 @@ typedef struct
     int     format;    /* image format */
     int     first_line; /* first line of image (SD from SDI only) */
 } obe_image_t;
+#define PRINT_OBE_IMAGE(i, prefix) { \
+	printf("%s: obj = %p, w=%d h=%d planes=%d csp=%d [%s] fmt=%d fl=%d\n", \
+		prefix, i, (i)->width, (i)->height, (i)->planes, (i)->csp, \
+		(i)->csp == PIX_FMT_YUV420P   ? "PIX_FMT_YUV420P" : \
+		(i)->csp == PIX_FMT_YUV420P10 ? "PIX_FMT_YUV420P10" : \
+		(i)->csp == PIX_FMT_YUV422P   ? "PIX_FMT_YUV422P" : \
+		(i)->csp == PIX_FMT_YUV422P10 ? "PIX_FMT_YUV422P10" : "UNDEFINED", \
+		(i)->format, (i)->first_line); \
+};
 
 typedef struct
 {
@@ -369,6 +378,10 @@ typedef struct
     int cancel_thread;
 
 } obe_filter_t;
+#define PRINT_OBE_FILTER(f, prefix) { \
+	printf("%s: obj = %p, num_ids=%d list[0]=%d\n", \
+		prefix, f, (f)->num_stream_ids, (f)->stream_id_list[0]); \
+};
 
 typedef struct
 {

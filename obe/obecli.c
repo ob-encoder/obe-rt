@@ -1533,6 +1533,38 @@ static int parse_command( char *command, obecli_command_t *commmand_list )
     return 0;
 }
 
+static int processCommand()
+{
+    if (!line_read)
+        return -1;
+    if (! *line_read)
+        return -1;
+
+    if (!strcasecmp(line_read, "exit") || !strcasecmp(line_read, "quit")) {
+        free(line_read);
+        return -1;
+    }
+
+    add_history(line_read);
+
+    int ret = parse_command( line_read, main_commands );
+    if (ret == -1)
+        fprintf( stderr, "%s: command not found \n", line_read );
+
+    if (!cli.h)
+    {
+        cli.h = obe_setup();
+        if( !cli.h )
+        {
+            fprintf( stderr, "obe_setup failed\n" );
+            return -1;
+        }
+        cli.avc_profile = -1;
+    }
+
+    return 0;
+}
+
 int main( int argc, char **argv )
 {
     char *home_dir = getenv( "HOME" );
@@ -1573,30 +1605,31 @@ int main( int argc, char **argv )
 
         line_read = readline( prompt );
 
-        if( line_read && *line_read )
-        {
-            if( !strcasecmp( line_read, "exit" ) ||
-                !strcasecmp( line_read, "quit" ) )
-            {
-                free( line_read );
-                break;
+	if (line_read && line_read[0] == '#') {
+            /* comment  - do nothing */
+        } else
+	if (line_read && line_read[0] != '@')
+		processCommand();
+	else
+	if (line_read && line_read[0] == '@' && strlen(line_read) > 1) {
+            line_read = realloc(line_read, 256);
+            FILE *fh = fopen(&line_read[1], "r");
+            while (fh && !feof(fh)) {
+                if (fgets(line_read, 256, fh) == NULL)
+                    break;
+                if (feof(fh))
+                    break;
+                    if (line_read[0] == '#')
+                        continue; /* Comment - do nothing */
+
+                line_read[strlen(line_read) - 1] = 0;
+
+                processCommand();
+                
             }
-
-            add_history( line_read );
-
-            int ret = parse_command( line_read, main_commands );
-            if( ret == -1 )
-                fprintf( stderr, "%s: command not found \n", line_read );
-
-            if( !cli.h )
-            {
-                cli.h = obe_setup();
-                if( !cli.h )
-                {
-                    fprintf( stderr, "obe_setup failed\n" );
-                    return -1;
-                }
-                cli.avc_profile = -1;
+            if (fh) {
+                fclose(fh);
+                fh = NULL;
             }
         }
     }

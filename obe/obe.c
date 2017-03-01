@@ -273,6 +273,9 @@ int add_to_filter_queue( obe_t *h, obe_raw_frame_t *raw_frame )
     if( !filter )
         return -1;
 
+#if 0
+PRINT_OBE_FILTER(filter, "ADD TO QUEUE");
+#endif
     return add_to_queue( &filter->queue, raw_frame );
 }
 
@@ -1190,9 +1193,15 @@ int obe_start( obe_t *h )
                     goto fail;
                 }
                 pthread_setname_np(h->filters[h->num_filters]->filter_thread, "obe-vid-filter");
+#if 0
+PRINT_OBE_FILTER(h->filters[h->num_filters], "VIDEO FILTER");
+#endif
             }
             else
             {
+#if 0
+PRINT_OBE_FILTER(h->filters[h->num_filters], "AUDIO FILTER");
+#endif
                 aud_filter_params = calloc( 1, sizeof(*aud_filter_params) );
                 if( !aud_filter_params )
                 {

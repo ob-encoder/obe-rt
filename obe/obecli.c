@@ -714,9 +714,16 @@ static int set_stream( char *command, obecli_command_t *child )
                     avc_param->i_frame_packing--;
                 }
 
-                if( csp )
-                {
-                    avc_param->i_csp = obe_otoi( csp, 420 ) == 422 || strcasecmp( csp, "4:2:2" ) ? X264_CSP_I422 : X264_CSP_I420;
+                if (csp) {
+                    switch (atoi(csp)) {
+                    default:
+                    case 420:
+                        avc_param->i_csp = X264_CSP_I420;
+                        break;
+                    case 422:
+                        avc_param->i_csp = X264_CSP_I422;
+                        break;
+                    }
                     if( X264_BIT_DEPTH == 10 )
                         avc_param->i_csp |= X264_CSP_HIGH_DEPTH;
                 }

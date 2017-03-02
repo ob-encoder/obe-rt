@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <assert.h>
+#include <getopt.h>
 
 #include <signal.h>
 #define _GNU_SOURCE
@@ -56,7 +57,6 @@ obecli_ctx_t cli;
 
 /* Ctrl-C handler */
 static volatile int b_ctrl_c = 0;
-static char *line_read = NULL;
 
 static int running = 0;
 static int system_type_value = OBE_SYSTEM_TYPE_GENERIC;
@@ -1533,17 +1533,10 @@ static int parse_command( char *command, obecli_command_t *commmand_list )
     return 0;
 }
 
-static int processCommand()
+static int processCommand(char *line_read)
 {
-    if (!line_read)
+    if (!strcasecmp(line_read, "exit") || !strcasecmp(line_read, "quit"))
         return -1;
-    if (! *line_read)
-        return -1;
-
-    if (!strcasecmp(line_read, "exit") || !strcasecmp(line_read, "quit")) {
-        free(line_read);
-        return -1;
-    }
 
     add_history(line_read);
 
@@ -1565,11 +1558,49 @@ static int processCommand()
     return 0;
 }
 
+static void _usage(const char *prog, int exitcode)
+{
+    printf("\nOpen Broadcast Encoder command line interface.\n");
+    printf("Including Kernel Labs enhancements.\n");
+    printf("Version 1.5 (" GIT_VERSION ")\n");
+    printf("\n");
+
+    if (exitcode) {
+        printf("%s -s <script.txt>\n", prog);
+        printf("\t-h              - Display command line helps.\n");
+        printf("\t-s <script.txt> - Start OBE and begin executing a list of commands.\n");
+        printf("\n");
+        exit(exitcode);
+    }
+}
+
 int main( int argc, char **argv )
 {
     char *home_dir = getenv( "HOME" );
     char *history_filename;
     char *prompt = "obecli> ";
+    char *script = NULL;
+    int   scriptInitialized = 0;
+    char *line_read = NULL;
+    int opt;
+
+    while ((opt = getopt(argc, argv, "c:h")) != -1) {
+        switch (opt) {
+        case 'c':
+            script = optarg;
+            {
+                /* Check it exists */
+                FILE *fh = fopen(script, "r");
+                if (!fh)
+                    _usage(argv[0], 1);
+                fclose(fh);
+            }
+            break;
+        case 'h':
+        default:
+            _usage(argv[0], 1);
+        }
+    }
 
     history_filename = malloc( strlen( home_dir ) + 16 + 1 );
     if( !history_filename )
@@ -1579,7 +1610,7 @@ int main( int argc, char **argv )
     }
 
     sprintf( history_filename, "%s/.obecli_history", home_dir );
-    read_history( history_filename );
+    read_history(history_filename);
 
     cli.h = obe_setup();
     if( !cli.h )
@@ -1590,27 +1621,33 @@ int main( int argc, char **argv )
 
     cli.avc_profile = -1;
 
-    printf( "\nOpen Broadcast Encoder command line interface.\n" );
-    printf( "Including Kernel Labs fixups.\n" );
-    printf( "Version 1.5 (" GIT_VERSION ")\n");
-    printf( "\n" );
+    _usage(argv[0], 0);
 
-    while( 1 )
-    {
-        if( line_read )
-        {
-            free( line_read );
+    while (1) {
+        if (line_read) {
+            free(line_read);
             line_read = NULL;
         }
 
-        line_read = readline( prompt );
+
+        if (script && !scriptInitialized) {
+            line_read = malloc(256);
+            if (!line_read) {
+                fprintf(stderr, "Unable to allocate ram for script command, aborting.\n");
+                break;
+            }
+            sprintf(line_read, "@%s", script);
+            scriptInitialized = 1;
+        } else
+            line_read = readline( prompt );
 
 	if (line_read && line_read[0] == '#') {
             /* comment  - do nothing */
         } else
-	if (line_read && line_read[0] != '@')
-		processCommand();
-	else
+	if (line_read && line_read[0] != '@') {
+		if (processCommand(line_read) < 0)
+                    break;
+	} else
 	if (line_read && line_read[0] == '@' && strlen(line_read) > 1) {
             line_read = realloc(line_read, 256);
             FILE *fh = fopen(&line_read[1], "r");
@@ -1619,13 +1656,16 @@ int main( int argc, char **argv )
                     break;
                 if (feof(fh))
                     break;
-                    if (line_read[0] == '#')
-                        continue; /* Comment - do nothing */
+                if (line_read[0] == '#')
+                    continue; /* Comment - do nothing */
+
+                if (strlen(line_read) <= 1)
+                    continue;
 
                 line_read[strlen(line_read) - 1] = 0;
 
-                processCommand();
-                
+		if (processCommand(line_read) < 0)
+                    break;
             }
             if (fh) {
                 fclose(fh);
@@ -1635,7 +1675,11 @@ int main( int argc, char **argv )
     }
 
     write_history( history_filename );
-    free( history_filename );
+
+    if (history_filename)
+        free(history_filename);
+    if (line_read)
+        free(line_read);
 
     stop_encode( NULL, NULL );
 

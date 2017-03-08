@@ -110,6 +110,94 @@ const static struct obe_to_decklink_video video_format_tab[] =
     { -1, 0, -1, -1 },
 };
 
+#if 1
+#define  y_white 0x3ff
+#define  y_black 0x000
+#define cr_white 0x200
+#define cb_white 0x200
+
+/* Six pixels */
+static uint32_t white[] = {
+	 cr_white << 20 |  y_white << 10 | cb_white,
+	  y_white << 20 | cb_white << 10 |  y_white,
+	 cb_white << 20 |  y_white << 10 | cr_white,
+	  y_white << 20 | cr_white << 10 |  y_white,
+};
+
+static uint32_t black[] = {
+	 cr_white << 20 |  y_black << 10 | cb_white,
+	  y_black << 20 | cb_white << 10 |  y_black,
+	 cb_white << 20 |  y_black << 10 | cr_white,
+	  y_black << 20 | cr_white << 10 |  y_black,
+};
+
+/* KL paint 6 pixels in a single point */
+__inline__ void V210_draw_6_pixels(uint32_t *addr, uint32_t *coloring)
+{
+	for (int i = 0; i < 5; i++) {
+		addr[0] = coloring[0];
+		addr[1] = coloring[1];
+		addr[2] = coloring[2];
+		addr[3] = coloring[3];
+		addr += 4;
+	}
+}
+
+__inline__ void V210_draw_box(uint32_t *frame_addr, uint32_t stride, int color)
+{
+	uint32_t *coloring;
+	if (color == 1)
+		coloring = white;
+	else
+		coloring = black;
+
+	for (uint32_t l = 0; l < 30; l++) {
+		uint32_t *addr = frame_addr + (l * (stride / 4));
+		V210_draw_6_pixels(addr, coloring);
+	}
+}
+
+__inline__ void V210_draw_box_at(uint32_t *frame_addr, uint32_t stride, int color, int x, int y)
+{
+	uint32_t *addr = frame_addr + (y * (stride / 4));
+	addr += ((x / 6) * 4);
+	V210_draw_box(addr, stride, color);
+}
+
+__inline__ void V210_write_32bit_value(void *frame_bytes, uint32_t stride, uint32_t value, uint32_t lineNr)
+{
+	for (int p = 31, sh = 0; p >= 0; p--, sh++) {
+		V210_draw_box_at(((uint32_t *)frame_bytes), stride,
+			(value & (1 << sh)) == (uint32_t)(1 << sh), p * 30, lineNr);
+	}
+}
+
+__inline__ uint32_t V210_read_32bit_value(void *frame_bytes, uint32_t stride, uint32_t lineNr)
+{
+	int xpos = 0;
+	uint32_t bits = 0;
+	for (int i = 0; i < 32; i++) {
+		xpos = (i * 30) + 8;
+		/* Sample the pixel eight lines deeper than the initial line, and eight pixels in from the left */
+		uint32_t *addr = ((uint32_t *)frame_bytes) + ((lineNr + 8) * (stride / 4));
+		addr += ((xpos / 6) * 4);
+
+		bits <<= 1;
+
+		/* Sample the pixel.... Compressor will decimate, we'll need a luma threshold for production. */
+		//printf("%08x %08x %08x %08x\n", addr[0], addr[1], addr[2], addr[3]);
+#if 1
+		if (addr[1] & 0x3ff > 0x080)
+			bits |= 1;
+#else
+		if (addr[1] == white[1])
+			bits |= 1;
+#endif
+	}
+	return bits;
+}
+#endif
+
 class DeckLinkCaptureDelegate;
 
 typedef struct
@@ -249,9 +337,11 @@ static void convert_colorspace_and_parse_vanc(decklink_ctx_t *decklink_ctx, stru
     if (decklink_ctx->smpte2038_ctx)
         smpte2038_packetizer_begin(decklink_ctx->smpte2038_ctx);
 
-	int ret = vanc_packet_parse(vanchdl, lineNr, decoded_words, sizeof(decoded_words) / (sizeof(unsigned short)));
-	if (ret < 0) {
-        /* No VANC on this line */
+	if (decklink_ctx->vanchdl) {
+		int ret = vanc_packet_parse(vanchdl, lineNr, decoded_words, sizeof(decoded_words) / (sizeof(unsigned short)));
+		if (ret < 0) {
+      	  /* No VANC on this line */
+		}
 	}
 
     if (decklink_ctx->smpte2038_ctx) {
@@ -402,7 +492,7 @@ public:
                     decklink_opts_->card_idx, decklink_ctx->enabled_mode_id, mode_id);
                 printf("Decklink card index %i: Resolution changed from %08x to %08x, aborting.\n",
                     decklink_opts_->card_idx, decklink_ctx->enabled_mode_id, mode_id);
-                exit(0); /* Take an intensional hard exit */
+                //exit(0); /* Take an intensional hard exit */
             }
         }
         return S_OK;
@@ -418,6 +508,9 @@ private:
 
 static void _vanc_cache_dump(decklink_ctx_t *ctx)
 {
+    if (ctx->vanchdl)
+        return;
+
     for (int d = 0; d <= 0xff; d++) {
         for (int s = 0; s <= 0xff; s++) {
             struct vanc_cache_s *e = vanc_cache_lookup(ctx->vanchdl, d, s);
@@ -510,6 +603,15 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
         const int stride = videoframe->GetRowBytes();
 
         videoframe->GetBytes( &frame_bytes );
+
+#if 1
+	static uint32_t xxx = 0;
+	V210_write_32bit_value(frame_bytes, stride, xxx++, 100);
+	//printf("value = 0x%08x\n", V210_read_32bit_value(frame_bytes, stride, 100));
+#endif
+#if 0
+	printf("value = 0x%08x\n", V210_read_32bit_value(frame_bytes, stride, 100));
+#endif
 
         /* TODO: support format switching (rare in SDI) */
         int j;
@@ -681,6 +783,8 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             raw_frame->timebase_den = decklink_opts_->timebase_den;
 
             memcpy( &raw_frame->img, &raw_frame->alloc_img, sizeof(raw_frame->alloc_img) );
+//PRINT_OBE_IMAGE(&raw_frame->img      , "      DECK->img");
+//PRINT_OBE_IMAGE(&raw_frame->alloc_img, "DECK->alloc_img");
             if( IS_SD( decklink_opts_->video_format ) )
             {
                 raw_frame->img.first_line = first_active_line[j].line;
@@ -707,8 +811,13 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                     raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
             }
 
+#if 0
+            add_to_encode_queue(h, raw_frame, 0);
+#else
+
             if( add_to_filter_queue( h, raw_frame ) < 0 )
                 goto fail;
+#endif
 
             if( send_vbi_and_ttx( h, &decklink_ctx->non_display_parser, raw_frame->pts ) < 0 )
                 goto fail;
@@ -788,7 +897,9 @@ static void close_card( decklink_opts_t *decklink_opts )
 {
     decklink_ctx_t *decklink_ctx = &decklink_opts->decklink_ctx;
 
+printf("%s()\n", __func__);
     if (decklink_ctx->vanchdl) {
+printf("%s() closing vanc\n", __func__);
         vanc_context_destroy(decklink_ctx->vanchdl);
         decklink_ctx->vanchdl = 0;
     }
@@ -1069,6 +1180,25 @@ static int cb_all(void *callback_context, struct vanc_context_s *ctx, struct pac
 	return 0;
 }
 
+static int cb_VANC_TYPE_KL_UINT64_COUNTER(void *callback_context, struct vanc_context_s *ctx, struct packet_kl_u64le_counter_s *pkt)
+{
+        /* Have the library display some debug */
+	static uint64_t lastGoodKLFrameCounter = 0;
+        if (lastGoodKLFrameCounter && lastGoodKLFrameCounter + 1 != pkt->counter) {
+                char t[160];
+                time_t now = time(0);
+                sprintf(t, "%s", ctime(&now));
+                t[strlen(t) - 1] = 0;
+
+                fprintf(stderr, "%s: KL VANC frame counter discontinuity was %" PRIu64 " now %" PRIu64 "\n",
+                        t,
+                        lastGoodKLFrameCounter, pkt->counter);
+        }
+        lastGoodKLFrameCounter = pkt->counter;
+
+        return 0;
+}
+
 static struct vanc_callbacks_s callbacks = 
 {
 	.payload_information	= cb_PAYLOAD_INFORMATION,
@@ -1076,6 +1206,7 @@ static struct vanc_callbacks_s callbacks =
 	.eia_608		= cb_EIA_608,
 	.scte_104		= cb_SCTE_104,
 	.all			= cb_all,
+	.kl_i64le_counter       = cb_VANC_TYPE_KL_UINT64_COUNTER,
 };
 /* End: VANC Callbacks */
 

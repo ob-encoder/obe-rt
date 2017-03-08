@@ -45,6 +45,7 @@ static int convert_obe_to_x264_pic( x264_picture_t *pic, obe_raw_frame_t *raw_fr
     obe_image_t *img = &raw_frame->img;
 #if 0
 PRINT_OBE_IMAGE(img, "      X264->img");
+PRINT_OBE_IMAGE(&raw_frame->alloc_img, "alloc X264->img");
 #endif
     int idx = 0, count = 0;
 
@@ -54,6 +55,15 @@ PRINT_OBE_IMAGE(img, "      X264->img");
     memcpy( pic->img.plane, img->plane, sizeof(img->plane) );
     pic->img.i_plane = img->planes;
     pic->img.i_csp = img->csp == PIX_FMT_YUV422P || img->csp == PIX_FMT_YUV422P10 ? X264_CSP_I422 : X264_CSP_I420;
+#if 0
+    pic->img.i_csp = X264_CSP_I422;
+#endif
+#if 0
+printf("pic->img.i_csp = %d [%s] bits = %d\n",
+  pic->img.i_csp,
+  pic->img.i_csp == X264_CSP_I422 ? "X264_CSP_I422" : "X264_CSP_I420",
+  X264_BIT_DEPTH);
+#endif
 
     if( X264_BIT_DEPTH == 10 )
         pic->img.i_csp |= X264_CSP_HIGH_DEPTH;
@@ -114,6 +124,8 @@ static void *start_encoder( void *ptr )
 {
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
     kl_histogram_reset(&frame_encode, "video frame encode", KL_BUCKET_VIDEO);
+    kl_histogram_reset(&gop_encode, "GOP compression time", KL_BUCKET_VIDEO);
+    kl_histogram_cumulative_initialize(&gop_encode);
 #endif
 
     obe_vid_enc_params_t *enc_params = ptr;
@@ -134,7 +146,14 @@ static void *start_encoder( void *ptr )
     /* Lock the mutex until we verify and fetch new parameters */
     pthread_mutex_lock( &encoder->queue.mutex );
 
-    enc_params->avc_param.pf_log = x264_logger;
+    //enc_params->avc_param.pf_log = x264_logger;
+    //enc_params->avc_param.i_log_level = 65535;
+
+#if 0
+    enc_params->avc_param.i_csp = X264_CSP_I422;
+#endif
+printf("enc_params->avc_param.i_csp = 0x%x (FIXED)\n", enc_params->avc_param.i_csp);
+
     s = x264_encoder_open( &enc_params->avc_param );
     if( !s )
     {
@@ -200,6 +219,7 @@ static void *start_encoder( void *ptr )
         /* convert obe_frame_t into x264 friendly struct */
         if( convert_obe_to_x264_pic( &pic, raw_frame ) < 0 )
         {
+printf("Malloc failed\n");
             syslog( LOG_ERR, "Malloc failed\n" );
             break;
         }
@@ -209,6 +229,7 @@ static void *start_encoder( void *ptr )
         pts2 = malloc( sizeof(int64_t) );
         if( !pts2 )
         {
+printf("Malloc failed\n");
             syslog( LOG_ERR, "Malloc failed\n" );
             break;
         }
@@ -261,13 +282,31 @@ static void *start_encoder( void *ptr )
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 	kl_histogram_sample_begin(&frame_encode);
+        kl_histogram_cumulative_begin(&gop_encode);
 #endif
         frame_size = x264_encoder_encode( s, &nal, &i_nal, &pic, &pic_out );
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 	kl_histogram_sample_complete(&frame_encode);
+        kl_histogram_cumulative_complete(&gop_encode);
+
+static int fc = 0;
+for (int m = 0; m < i_nal; m++) {
+	//printf("fc = %d I:%d %d\n", fc++, nal[m].i_type, nal[m].i_payload);
+        if (nal[m].i_type == NAL_SLICE) {
+           fc++;
+           /* Four MB slices per frame, and 60fps */
+           if (fc == (enc_params->avc_param.i_threads * 30)) {
+               fc = 0;
+               kl_histogram_cumulative_finalize(&gop_encode); 
+               kl_histogram_cumulative_initialize(&gop_encode); 
+           }
+        }
+}
+
 	if (histogram_dump++ > 240) {
 		histogram_dump = 0;
 		kl_histogram_printf(&frame_encode);
+		kl_histogram_printf(&gop_encode);
 	}
 #endif
 
@@ -278,6 +317,7 @@ static void *start_encoder( void *ptr )
 
         if( frame_size < 0 )
         {
+            printf("x264_encoder_encode failed\n");
             syslog( LOG_ERR, "x264_encoder_encode failed\n" );
             break;
         }
@@ -287,7 +327,6 @@ static void *start_encoder( void *ptr )
             coded_frame = new_coded_frame( encoder->output_stream_id, frame_size );
             if( !coded_frame )
             {
-printf("Malloc failed\n" );
                 syslog( LOG_ERR, "Malloc failed\n" );
                 break;
             }

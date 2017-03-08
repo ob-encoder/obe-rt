@@ -28,6 +28,7 @@
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 #include <libklmonitoring/klmonitoring.h>
 static struct kl_histogram frame_encode;
+static struct kl_histogram gop_encode;
 static int histogram_dump = 0;
 #endif
 

@@ -303,6 +303,7 @@ static int resize_frame( obe_vid_filter_ctx_t *vfilt, obe_raw_frame_t *raw_frame
     tmp_image.height = raw_frame->img.height;
     tmp_image.planes = av_pix_fmt_descriptors[vfilt->dst_pix_fmt].nb_components;
     tmp_image.csp = vfilt->dst_pix_fmt;
+//printf("filter new csp is %d\n", vfilt->dst_pix_fmt);
     tmp_image.format = raw_frame->img.format;
 
     if( av_image_alloc( tmp_image.plane, tmp_image.stride, tmp_image.width, tmp_image.height+1,
@@ -462,10 +463,18 @@ static int dither_image( obe_vid_filter_ctx_t *vfilt, obe_raw_frame_t *raw_frame
     obe_image_t *out = &tmp_image;
 
     tmp_image.csp = img->csp == PIX_FMT_YUV422P10 ? PIX_FMT_YUV422P : PIX_FMT_YUV420P;
+#if 0
+printf("%s() inputcsp = %d csp = %d   PIX_FMT_YUV422P = %d PIX_FMT_YUV420P = %d\n", __func__, img->csp, tmp_image.csp, PIX_FMT_YUV422P, PIX_FMT_YUV420P);
+if (tmp_image.csp == PIX_FMT_YUV420P)
+  printf("CSP now PIX_FMT_YUV420P\n");
+#endif
     tmp_image.width = raw_frame->img.width;
     tmp_image.height = raw_frame->img.height;
     tmp_image.planes = av_pix_fmt_descriptors[tmp_image.csp].nb_components;
     tmp_image.format = raw_frame->img.format;
+#if 0
+printf("%s(2) inputcsp = %d csp = %d   PIX_FMT_YUV422P = %d PIX_FMT_YUV420P = %d\n", __func__, img->csp, tmp_image.csp, PIX_FMT_YUV422P, PIX_FMT_YUV420P);
+#endif
 
     if( av_image_alloc( tmp_image.plane, tmp_image.stride, tmp_image.width, tmp_image.height+1,
                         tmp_image.csp, 16 ) < 0 )
@@ -718,6 +727,7 @@ static void *start_filter( void *ptr )
         }
 
         raw_frame = filter->queue.queue[0];
+//PRINT_OBE_IMAGE(&raw_frame->img, "VIDEO FILTER  PRE");
         pthread_mutex_unlock( &filter->queue.mutex );
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
@@ -736,6 +746,7 @@ static void *start_filter( void *ptr )
             if( resize_frame( vfilt, raw_frame, output_stream->avc_param.i_width ) < 0 )
                 goto end;
         }
+//PRINT_OBE_IMAGE(&raw_frame->img, "RESIZE POST      ");
 
         if( av_pix_fmt_get_chroma_sub_sample( raw_frame->img.csp, &h_shift, &v_shift ) < 0 )
             goto end;
@@ -753,6 +764,7 @@ static void *start_filter( void *ptr )
             if( dither_image( vfilt, raw_frame ) < 0 )
                 goto end;
         }
+//PRINT_OBE_IMAGE(&raw_frame->img, "DITHER POST      ");
 
         if( encapsulate_user_data( raw_frame, input_stream ) < 0 )
             goto end;
@@ -774,6 +786,7 @@ static void *start_filter( void *ptr )
         }
 
         remove_from_queue( &filter->queue );
+//PRINT_OBE_IMAGE(&raw_frame->img, "VIDEO FILTER POST");
         add_to_encode_queue( h, raw_frame, 0 );
     }
 

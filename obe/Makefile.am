@@ -10,7 +10,7 @@ CFLAGS += -Wall -DVERSION=\"$(VERSION)\" -DPROG="\"$(PACKAGE)\"" -D_FILE_OFFSET_
 	-DKL_USERSPACE -D__STDC_FORMAT_MACROS \
 	-DGIT_VERSION=\"$(GIT_VERSION)\" \
 	-DHAVE_DECKLINK \
-	-DHAVE_OBE_X264=0
+	-DHAVE_OBE_X264=1
 
 LDFLAGS += -lpthread -lz -lx264 -lyuv
 LDFLAGS += -lavformat -lavcodec -lavresample -ldl -lasound -lfdk-aac -lbz2 -lz -lswscale -lavutil -lm

@@ -157,7 +157,9 @@ static void *start_encoder( void *ptr )
     encoder->is_ready = 1;
     /* XXX: This will need fixing for soft pulldown streams */
     frame_duration = av_rescale_q( 1, (AVRational){enc_params->avc_param.i_fps_den, enc_params->avc_param.i_fps_num}, (AVRational){1, OBE_CLOCK} );
+#if HAVE_OBE_X264
     buffer_duration = frame_duration * enc_params->avc_param.sc.i_buffer_size;
+#endif
 
     /* Broadcast because input and muxer can be stuck waiting for encoder */
     pthread_cond_broadcast( &encoder->queue.in_cv );
@@ -185,7 +187,9 @@ static void *start_encoder( void *ptr )
             h->enc_smoothing_buffer_complete = 0;
             pthread_mutex_unlock( &h->enc_smoothing_queue.mutex );
             syslog( LOG_INFO, "Speedcontrol reset\n" );
+#if HAVE_OBE_X264
             x264_speedcontrol_sync( s, enc_params->avc_param.sc.i_buffer_size, enc_params->avc_param.sc.f_buffer_init, 0 );
+#endif
             h->encoder_drop = 0;
         }
         pthread_mutex_unlock( &h->drop_mutex );
@@ -247,7 +251,9 @@ static void *start_encoder( void *ptr )
                 else
                     buffer_fill = (float)(-1 * last_frame_delta)/buffer_duration;
 
+#if HAVE_OBE_X264
                 x264_speedcontrol_sync( s, buffer_fill, enc_params->avc_param.sc.i_buffer_size, 1 );
+#endif
             }
 
             pthread_mutex_unlock( &h->enc_smoothing_queue.mutex );
@@ -281,16 +287,27 @@ static void *start_encoder( void *ptr )
             coded_frame = new_coded_frame( encoder->output_stream_id, frame_size );
             if( !coded_frame )
             {
+printf("Malloc failed\n" );
                 syslog( LOG_ERR, "Malloc failed\n" );
                 break;
             }
             memcpy( coded_frame->data, nal[0].p_payload, frame_size );
             coded_frame->is_video = 1;
             coded_frame->len = frame_size;
+#if HAVE_OBE_X264
             coded_frame->cpb_initial_arrival_time = pic_out.hrd_timing.cpb_initial_arrival_time;
             coded_frame->cpb_final_arrival_time = pic_out.hrd_timing.cpb_final_arrival_time;
             coded_frame->real_dts = pic_out.hrd_timing.cpb_removal_time;
             coded_frame->real_pts = pic_out.hrd_timing.dpb_output_time;
+#else
+            coded_frame->cpb_initial_arrival_time = pic_out.hrd_timing.cpb_initial_arrival_time * 27000000.0;
+            coded_frame->cpb_final_arrival_time = pic_out.hrd_timing.cpb_final_arrival_time * 27000000.0;
+            coded_frame->real_dts = (pic_out.hrd_timing.cpb_removal_time * 27000000.0);
+            coded_frame->real_pts = (pic_out.hrd_timing.dpb_output_time  * 27000000.0);
+            printf("H264: real_pts:%llu real_dts:%llu (%.3f %.3f)\n",
+                coded_frame->real_pts, coded_frame->real_dts,
+                pic_out.hrd_timing.dpb_output_time, pic_out.hrd_timing.cpb_removal_time);
+#endif
             pts2 = pic_out.opaque;
             coded_frame->pts = pts2[0];
             coded_frame->random_access = pic_out.b_keyframe;

@@ -147,7 +147,7 @@ static void *start_encoder( void *ptr )
     /* Lock the mutex until we verify and fetch new parameters */
     pthread_mutex_lock( &encoder->queue.mutex );
 
-    //enc_params->avc_param.pf_log = x264_logger;
+    enc_params->avc_param.pf_log = x264_logger;
     //enc_params->avc_param.i_log_level = 65535;
 
 #if 0

@@ -344,7 +344,7 @@ for (int m = 0; m < i_nal; m++) {
             coded_frame->cpb_final_arrival_time = pic_out.hrd_timing.cpb_final_arrival_time * 27000000.0;
             coded_frame->real_dts = (pic_out.hrd_timing.cpb_removal_time * 27000000.0);
             coded_frame->real_pts = (pic_out.hrd_timing.dpb_output_time  * 27000000.0);
-            printf("H264: real_pts:%llu real_dts:%llu (%.3f %.3f)\n",
+            printf("H264: real_pts:%" PRIi64 " real_dts:%" PRIi64 " (%.3f %.3f)\n",
                 coded_frame->real_pts, coded_frame->real_dts,
                 pic_out.hrd_timing.dpb_output_time, pic_out.hrd_timing.cpb_removal_time);
 #endif

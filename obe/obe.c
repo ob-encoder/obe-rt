@@ -1192,6 +1192,9 @@ int obe_start( obe_t *h )
                 vid_filter_params->filter = h->filters[h->num_filters];
                 vid_filter_params->input_stream = input_stream;
                 vid_filter_params->target_csp = h->output_streams[i].avc_param.i_csp & X264_CSP_MASK;
+#if 0
+                vid_filter_params->target_csp = X264_CSP_I422;
+#endif
 
                 if( pthread_create( &h->filters[h->num_filters]->filter_thread, NULL, video_filter.start_filter, vid_filter_params ) < 0 )
                 {

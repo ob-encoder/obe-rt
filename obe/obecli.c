@@ -1656,7 +1656,7 @@ int main( int argc, char **argv )
 	if (line_read && line_read[0] == '#') {
             /* comment  - do nothing */
         } else
-	if (line_read && line_read[0] != '@') {
+	if (line_read && strlen(line_read) > 0 && line_read[0] != '@') {
 		if (processCommand(line_read) < 0)
                     break;
 	} else

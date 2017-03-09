@@ -296,7 +296,10 @@ for (int m = 0; m < i_nal; m++) {
         if (nal[m].i_type == NAL_SLICE) {
            fc++;
            /* Four MB slices per frame, and 60fps */
-           if (fc == (enc_params->avc_param.i_threads * 30)) {
+           /* TODO: Warning, if the framerate is not 60fps then this calculation breaks.
+            * I've been manually adjusting it for 60 vs 30 content when testing.
+            */
+           if (fc == (enc_params->avc_param.i_threads * 60)) {
                fc = 0;
                kl_histogram_cumulative_finalize(&gop_encode); 
                kl_histogram_cumulative_initialize(&gop_encode); 

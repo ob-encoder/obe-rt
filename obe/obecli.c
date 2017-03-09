@@ -729,7 +729,7 @@ static int set_stream( char *command, obecli_command_t *child )
                 }
 
                 if( filler )
-#if HAVE_OBE_X264
+#if X264_BUILD < 148
                     avc_param->i_nal_hrd = obe_otob( filler, 0 ) ? X264_NAL_HRD_FAKE_CBR : X264_NAL_HRD_FAKE_VBR;
 #else
                     avc_param->i_nal_hrd = obe_otob( filler, 0 ) ? X264_NAL_HRD_CBR : X264_NAL_HRD_VBR;

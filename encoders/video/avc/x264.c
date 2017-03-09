@@ -177,7 +177,7 @@ printf("enc_params->avc_param.i_csp = 0x%x (FIXED)\n", enc_params->avc_param.i_c
     encoder->is_ready = 1;
     /* XXX: This will need fixing for soft pulldown streams */
     frame_duration = av_rescale_q( 1, (AVRational){enc_params->avc_param.i_fps_den, enc_params->avc_param.i_fps_num}, (AVRational){1, OBE_CLOCK} );
-#if HAVE_OBE_X264
+#if X264_BUILD < 148
     buffer_duration = frame_duration * enc_params->avc_param.sc.i_buffer_size;
 #endif
 
@@ -207,7 +207,7 @@ printf("enc_params->avc_param.i_csp = 0x%x (FIXED)\n", enc_params->avc_param.i_c
             h->enc_smoothing_buffer_complete = 0;
             pthread_mutex_unlock( &h->enc_smoothing_queue.mutex );
             syslog( LOG_INFO, "Speedcontrol reset\n" );
-#if HAVE_OBE_X264
+#if X264_BUILD < 148
             x264_speedcontrol_sync( s, enc_params->avc_param.sc.i_buffer_size, enc_params->avc_param.sc.f_buffer_init, 0 );
 #endif
             h->encoder_drop = 0;
@@ -273,7 +273,7 @@ printf("Malloc failed\n");
                 else
                     buffer_fill = (float)(-1 * last_frame_delta)/buffer_duration;
 
-#if HAVE_OBE_X264
+#if X264_BUILD < 148
                 x264_speedcontrol_sync( s, buffer_fill, enc_params->avc_param.sc.i_buffer_size, 1 );
 #endif
             }
@@ -334,7 +334,7 @@ for (int m = 0; m < i_nal; m++) {
             memcpy( coded_frame->data, nal[0].p_payload, frame_size );
             coded_frame->is_video = 1;
             coded_frame->len = frame_size;
-#if HAVE_OBE_X264
+#if X264_BUILD < 148
             coded_frame->cpb_initial_arrival_time = pic_out.hrd_timing.cpb_initial_arrival_time;
             coded_frame->cpb_final_arrival_time = pic_out.hrd_timing.cpb_final_arrival_time;
             coded_frame->real_dts = pic_out.hrd_timing.cpb_removal_time;

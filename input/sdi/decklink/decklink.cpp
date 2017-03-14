@@ -1041,95 +1041,20 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 		return 0;
 	}
 
-	struct multiple_operation_message *mom = &pkt->mo_msg;
 	struct single_operation_message *m = &pkt->so_msg;
-	struct splice_request_data *d = &pkt->sr_data;
 
-	if (m->opID == SO_INIT_REQUEST_DATA) {
-
-		uint8_t *section = 0;
-		uint32_t sectionLengthBytes;
-		int r = -1;
-
-		/* TODO: deconstruct the parsed structs, create a new SCTE35 message. */
-		if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
-			r = scte35_generate_out_of_network(
-				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
-				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-				&section, &sectionLengthBytes, 1);
-		} else
-		if (d->splice_insert_type == SPLICEEND_IMMEDIATE) {
-			r = scte35_generate_immediate_in_to_network(
-				SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
-				SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-				&section, &sectionLengthBytes);
-		} else
-		if ((d->splice_insert_type == SPLICESTART_NORMAL) || (d->splice_insert_type == SPLICEEND_NORMAL)) {
-			fprintf(stderr, "No support for SCTE104 SO_INIT _NORMAL messages\n");
-		}
-		/* TODO: No support for SPLICESTART_NORMAL in SO formatted messages */
-
-		if (r < 0) {
-			fprintf(stderr, "Unable to create a SCTE35 section\n");
-		}
-
-		/* Now send the constructed frame to the mux */
-		if (section) {
-			transmit_scte35_section_to_muxer(decklink_ctx, section, sectionLengthBytes);
-			free(section);
-		}
-
-
-	} else
 	if (m->opID == 0xFFFF /* Multiple Operation Message */) {
+		struct splice_entries results;
+		int r = scte35_generate_from_scte104(pkt, &results);
+		if (r != 0) {
+			fprintf(stderr, "Generation of SCTE-35 sections failed\n");
+		}
 
-		for (int i = 0; i < mom->num_ops; i++) {
-			struct multiple_operation_message_operation *o = &mom->ops[i];
-			if (o->opID == MO_INIT_REQUEST_DATA) {
-
-				uint8_t *section = 0;
-				uint32_t sectionLengthBytes;
-				int r = -1;
-
-				/* No support for SCTE104 pre-roll */
-				/* No support for SCTE104 splice_cancel */
-				if (d->splice_insert_type == SPLICESTART_IMMEDIATE) {
-					r = scte35_generate_out_of_network_duration(
-						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
-						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-						SCTE104_SR_DATA_FIELD__DURATION(pkt),
-						SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt),
-						&section, &sectionLengthBytes, 1);
-				} else
-				if (d->splice_insert_type == SPLICESTART_NORMAL) {
-					r = scte35_generate_out_of_network_duration(
-						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
-						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-						SCTE104_SR_DATA_FIELD__DURATION(pkt),
-						SCTE104_SR_DATA_FIELD__AUTO_RETURN_FLAGS(pkt),
-						&section, &sectionLengthBytes, 0);
-				} else
-				if (d->splice_insert_type == SPLICEEND_IMMEDIATE || d->splice_insert_type == SPLICEEND_NORMAL) {
-					r = scte35_generate_immediate_in_to_network(
-						SCTE104_SR_DATA_FIELD__UNIQUE_PROGRAM_ID(pkt),
-						SCTE104_SR_DATA_FIELD__SPLICE_EVENT_ID(pkt),
-						&section, &sectionLengthBytes);
-				}
-				if (r < 0) {
-					fprintf(stderr, "Unable to create a SCTE35 section\n");
-				}
-
-				/* Now send the constructed frame to the mux */
-				if (section) {
-					transmit_scte35_section_to_muxer(decklink_ctx, section, sectionLengthBytes);
-					free(section);
-				}
-
-			} else {
-				/* Unsupport message type */
-			}
-		} /* for all message types */
-
+		for (size_t i = 0; i < results.num_splices; i++) {
+			transmit_scte35_section_to_muxer(decklink_ctx, results.splice_entry[i],
+							 results.splice_size[i]);
+			free(results.splice_entry[i]);
+		}
 	} else {
 		/* Unsupported single_operation_message type */
 	}

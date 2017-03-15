@@ -72,12 +72,12 @@ AC_CHECK_HEADERS([twolame.h],
                  [break],
                  [AC_MSG_ERROR([libtwolame headers not found or not usable])])
 
-# Check for curses (optional)
-AC_CHECK_HEADERS([libklmonitoring/klmonitoring.h], HEADER_LIBKLMONITORING="yes")
-if test "x$HEADER_LIBKLMONITORING" == "xyes" ; then
-    LDFLAGS+=" -lklmonitoring "
-fi
-AM_CONDITIONAL(LIBKLMONITORING, test x"$HEADER_LIBKLMONITORING" == x"yes")
+# Check for klmonitoring (optional)
+#AC_CHECK_HEADERS([libklmonitoring/klmonitoring.h], HEADER_LIBKLMONITORING="yes")
+#if test "x$HEADER_LIBKLMONITORING" == "xyes" ; then
+#    LDFLAGS+=" -lklmonitoring "
+#fi
+#AM_CONDITIONAL(LIBKLMONITORING, test x"$HEADER_LIBKLMONITORING" == x"yes")
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UINT16_T

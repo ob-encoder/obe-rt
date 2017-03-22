@@ -29,6 +29,11 @@
 #define __STDC_FORMAT_MACROS   1
 #define __STDC_CONSTANT_MACROS 1
 
+#define KL_PRBS_INPUT 0
+#if KL_PRBS_INPUT
+#include <libklmonitoring/kl-prbs.h>
+#endif
+
 extern "C"
 {
 #include "common/common.h"
@@ -246,6 +251,10 @@ typedef struct
 
     /* SMPTE2038 packetizer */
     struct smpte2038_packetizer_s *smpte2038_ctx;
+
+#if KL_PRBS_INPUT
+    struct prbs_context_s prbs;
+#endif
 
 } decklink_ctx_t;
 
@@ -529,6 +538,19 @@ static void _vanc_cache_dump(decklink_ctx_t *ctx)
         }
     }
 }
+
+#if KL_PRBS_INPUT
+static void dumpAudio(uint16_t *ptr, int fc, int num_channels, int rows)
+{
+    uint16_t *p = ptr;
+    for (int i = 0; i < fc; i++, p += num_channels * 2) {
+        printf("%d.%04x %04x %04x %04x\n", i, *(p + 0), *(p + 1), *(p + 2), *(p + 3));
+        if (rows && rows == i)
+            break;
+    }
+}
+static int prbs_inited = 0;
+#endif
 
 HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFrame *videoframe, IDeckLinkAudioInputPacket *audioframe )
 {
@@ -842,6 +864,35 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
         raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
         raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
         raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P;
+#if KL_PRBS_INPUT
+        {
+            uint16_t *p = (uint16_t *)frame_bytes;
+            dumpAudio(p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels, 9);
+
+            if (prbs_inited == 0) {
+                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++, p += raw_frame->audio_frame.num_channels * 2) {
+                    if (i == (audioframe->GetSampleFrameCount() - 1)) {
+                        printf("Seed with 0x%04x\n", *(p + 1));
+                        prbs15_init_with_seed(&decklink_ctx->prbs, *(p + 1));
+                    }
+                }
+                prbs_inited = 1;
+            } else {
+                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++, p += raw_frame->audio_frame.num_channels * 2) {
+                    //printf("%04x %04x %04x %04x -- ", *(p + 0), *(p + 1), *(p + 2), *(p + 3));
+                    uint16_t a = *(p + 1);
+                    uint16_t b = prbs15_generate(&decklink_ctx->prbs);
+                    if (a != b) {
+                        printf("%04x %04x %04x %04x -- ", *(p + 0), *(p + 1), *(p + 2), *(p + 3));
+                        printf("y.is:%04x pred:%04x (pos %d)\n", a, b, i);
+                        prbs_inited = 0;
+                        dumpAudio(p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels, 5);
+                        break;
+                    }
+                }
+            }
+        }
+#endif
 
         if( av_samples_alloc( raw_frame->audio_frame.audio_data, &raw_frame->audio_frame.linesize, decklink_opts_->num_channels,
                               raw_frame->audio_frame.num_samples, (AVSampleFormat)raw_frame->audio_frame.sample_fmt, 0 ) < 0 )

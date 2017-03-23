@@ -29,6 +29,8 @@
 #define __STDC_FORMAT_MACROS   1
 #define __STDC_CONSTANT_MACROS 1
 
+#define WRITE_OSD_VALUE 0
+
 #define KL_PRBS_INPUT 0
 #if KL_PRBS_INPUT
 #include <libklmonitoring/kl-prbs.h>
@@ -115,7 +117,7 @@ const static struct obe_to_decklink_video video_format_tab[] =
     { -1, 0, -1, -1 },
 };
 
-#if 1
+#if WRITE_OSD_VALUE
 #define  y_white 0x3ff
 #define  y_black 0x000
 #define cr_white 0x200
@@ -191,7 +193,7 @@ __inline__ uint32_t V210_read_32bit_value(void *frame_bytes, uint32_t stride, ui
 
 		/* Sample the pixel.... Compressor will decimate, we'll need a luma threshold for production. */
 		//printf("%08x %08x %08x %08x\n", addr[0], addr[1], addr[2], addr[3]);
-#if 1
+#if WRITE_OSD_VALUE
 		if ((addr[1] & 0x3ff) > 0x080)
 			bits |= 1;
 #else
@@ -626,7 +628,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
         videoframe->GetBytes( &frame_bytes );
 
-#if 1
+#if WRITE_OSD_VALUE
 	static uint32_t xxx = 0;
 	V210_write_32bit_value(frame_bytes, stride, xxx++, 100);
 	//printf("value = 0x%08x\n", V210_read_32bit_value(frame_bytes, stride, 100));

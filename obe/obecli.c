@@ -104,7 +104,11 @@ static const char * stream_opts[] = { "action", "format",
                                       "pid", "lang", "audio-type", "num-ttx", "ttx-lang", "ttx-type", "ttx-mag", "ttx-page",
                                       /* VBI options */
                                       "vbi-ttx", "vbi-inv-ttx", "vbi-vps", "vbi-wss",
+
+                                      /* 40 ... n */
+                                      "opencl",
                                       NULL };
+
 static const char * muxer_opts[]  = { "ts-type", "cbr", "ts-muxrate", "passthrough", "ts-id", "program-num", "pmt-pid", "pcr-pid",
                                       "pcr-period", "pat-period", "service-name", "provider-name", "scte35-pid", "smpte2038-pid", NULL };
 static const char * ts_types[]    = { "generic", "dvb", "cablelabs", "atsc", "isdb", NULL };
@@ -639,6 +643,8 @@ static int set_stream( char *command, obecli_command_t *child )
             char *lang        = obe_get_option( stream_opts[29], opts );
             char *audio_type  = obe_get_option( stream_opts[30], opts );
 
+            char *opencl  = obe_get_option( stream_opts[40], opts );
+
             if( input_stream->stream_type == STREAM_TYPE_VIDEO )
             {
                 x264_param_t *avc_param = &cli.output_streams[output_stream_id].avc_param;
@@ -727,6 +733,11 @@ static int set_stream( char *command, obecli_command_t *child )
                     if( X264_BIT_DEPTH == 10 )
                         avc_param->i_csp |= X264_CSP_HIGH_DEPTH;
                 }
+
+                if (opencl)
+                    avc_param->b_opencl = atoi(opencl);
+                else
+                    avc_param->b_opencl = 0;
 
                 if( filler )
 #if X264_BUILD < 148

@@ -81,6 +81,7 @@ static const char * const channel_maps[]             = { "", "mono", "stereo", "
 static const char * const mono_channels[]            = { "left", "right", 0 };
 static const char * const output_modules[]           = { "udp", "rtp", "linsys-asi", 0 };
 static const char * const addable_streams[]          = { "audio", "ttx" };
+static const char * const preset_names[]        = { "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow", "placebo", NULL };
 
 static const char * system_opts[] = { "system-type", NULL };
 static const char * input_opts[]  = { "location", "card-idx", "video-format", "video-connection", "audio-connection",
@@ -105,8 +106,8 @@ static const char * stream_opts[] = { "action", "format",
                                       /* VBI options */
                                       "vbi-ttx", "vbi-inv-ttx", "vbi-vps", "vbi-wss",
 
-                                      /* 40 ... n */
-                                      "opencl",
+                                      "opencl", /* 40 */
+                                      "preset-name", /* 41 */
                                       NULL };
 
 static const char * muxer_opts[]  = { "ts-type", "cbr", "ts-muxrate", "passthrough", "ts-id", "program-num", "pmt-pid", "pcr-pid",
@@ -644,10 +645,24 @@ static int set_stream( char *command, obecli_command_t *child )
             char *audio_type  = obe_get_option( stream_opts[30], opts );
 
             char *opencl  = obe_get_option( stream_opts[40], opts );
+            const char *preset_name  = obe_get_option( stream_opts[41], opts );
+
 
             if( input_stream->stream_type == STREAM_TYPE_VIDEO )
             {
                 x264_param_t *avc_param = &cli.output_streams[output_stream_id].avc_param;
+
+                FAIL_IF_ERROR(preset_name && (check_enum_value( preset_name, preset_names) < 0),
+                              "Invalid preset-name\n" );
+
+                if (preset_name) {
+                    obe_populate_avc_encoder_params(cli.h,  input_stream->input_stream_id
+			/* cli.program.streams[i].input_stream_id */, avc_param, preset_name);
+                } else {
+                    obe_populate_avc_encoder_params(cli.h, input_stream->input_stream_id
+			/* cli.program.streams[i].input_stream_id */, avc_param, "veryfast");
+                }
+
 
                 FAIL_IF_ERROR( profile && ( check_enum_value( profile, x264_profile_names ) < 0 ),
                                "Invalid AVC profile\n" );
@@ -1516,7 +1531,6 @@ static int probe_device( char *command, obecli_command_t *child )
             cli.output_streams[i].output_stream_id = cli.program.streams[i].input_stream_id;
             if( cli.program.streams[i].stream_type == STREAM_TYPE_VIDEO )
             {
-                obe_populate_avc_encoder_params( cli.h, cli.program.streams[i].input_stream_id, &cli.output_streams[i].avc_param );
                 cli.output_streams[i].video_anc.cea_608 = cli.output_streams[i].video_anc.cea_708 = 1;
                 cli.output_streams[i].video_anc.afd = cli.output_streams[i].video_anc.wss_to_afd = 1;
             }

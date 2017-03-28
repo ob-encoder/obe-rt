@@ -328,7 +328,7 @@ int obe_convert_analogue_to_smpte( int format, int line_analogue, int field, int
  * You can use the functions in the x264 API for tweaking or edit the parameter struct directly.
  * Be aware that some parameters will affect hardware support.
  */
-int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t *param );
+int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t *param, const char *preset_name);
 
 /**** 3DTV ****/
 /* Arrangements - Frame Packing */

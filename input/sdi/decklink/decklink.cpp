@@ -31,9 +31,13 @@
 
 #define WRITE_OSD_VALUE 0
 
+#if HAVE_LIBKLMONITORING_KLMONITORING_H
 #define KL_PRBS_INPUT 0
+
 #if KL_PRBS_INPUT
 #include <libklmonitoring/kl-prbs.h>
+#endif
+
 #endif
 
 extern "C"
@@ -542,14 +546,16 @@ static void _vanc_cache_dump(decklink_ctx_t *ctx)
 }
 
 #if KL_PRBS_INPUT
-static void dumpAudio(uint16_t *ptr, int fc, int num_channels, int rows)
+static void dumpAudio(uint16_t *ptr, int fc, int num_channels)
 {
-    uint16_t *p = ptr;
-    for (int i = 0; i < fc; i++, p += num_channels * 2) {
-        printf("%d.%04x %04x %04x %04x\n", i, *(p + 0), *(p + 1), *(p + 2), *(p + 3));
-        if (rows && rows == i)
-            break;
-    }
+        fc = 4;
+        uint32_t *p = (uint32_t *)ptr;
+        for (int i = 0; i < fc; i++) {
+                printf("%d.", i);
+                for (int j = 0; j < num_channels; j++)
+                        printf("%08x ", *p++);
+                printf("\n");
+        }
 }
 static int prbs_inited = 0;
 #endif
@@ -868,28 +874,39 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
         raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P;
 #if KL_PRBS_INPUT
         {
-            uint16_t *p = (uint16_t *)frame_bytes;
-            dumpAudio(p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels, 9);
+            uint32_t *p = (uint32_t *)frame_bytes;
+            //dumpAudio((uint16_t *)p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels);
 
             if (prbs_inited == 0) {
-                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++, p += raw_frame->audio_frame.num_channels * 2) {
-                    if (i == (audioframe->GetSampleFrameCount() - 1)) {
-                        printf("Seed with 0x%04x\n", *(p + 1));
-                        prbs15_init_with_seed(&decklink_ctx->prbs, *(p + 1));
+                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++) {
+                    for (int j = 0; j < raw_frame->audio_frame.num_channels; j++) {
+                        if (i == (audioframe->GetSampleFrameCount() - 1)) {
+                            if (j == (raw_frame->audio_frame.num_channels - 1)) {
+                                printf("Seeding audio PRBS sequence with upstream value 0x%08x\n", *p >> 16);
+                                prbs15_init_with_seed(&decklink_ctx->prbs, *p >> 16);
+                            }
+                        }
+			p++;
                     }
                 }
                 prbs_inited = 1;
             } else {
-                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++, p += raw_frame->audio_frame.num_channels * 2) {
-                    //printf("%04x %04x %04x %04x -- ", *(p + 0), *(p + 1), *(p + 2), *(p + 3));
-                    uint16_t a = *(p + 1);
-                    uint16_t b = prbs15_generate(&decklink_ctx->prbs);
-                    if (a != b) {
-                        printf("%04x %04x %04x %04x -- ", *(p + 0), *(p + 1), *(p + 2), *(p + 3));
-                        printf("y.is:%04x pred:%04x (pos %d)\n", a, b, i);
-                        prbs_inited = 0;
-                        dumpAudio(p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels, 5);
-                        break;
+                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++) {
+                    for (int j = 0; j < raw_frame->audio_frame.num_channels; j++) {
+                        uint32_t a = *p++ >> 16;
+                        uint32_t b = prbs15_generate(&decklink_ctx->prbs);
+                        if (a != b) {
+                            char t[160];
+                            time_t now = time(0);
+                            sprintf(t, "%s", ctime(&now));
+                            t[strlen(t) - 1] = 0;
+                            fprintf(stderr, "%s: KL PRSB15 Audio frame discontinuity, expected %08" PRIx32 " got %08" PRIx32 "\n", t, b, a);
+                            prbs_inited = 0;
+
+                            // Break the sample frame loop i
+                            i = audioframe->GetSampleFrameCount();
+                            break;
+                        }
                     }
                 }
             }

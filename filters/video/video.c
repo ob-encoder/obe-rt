@@ -773,7 +773,9 @@ static void *start_filter( void *ptr )
         kl_histogram_sample_complete(&filter_encode);
         if (histogram_dump++ > 240) {
                 histogram_dump = 0;
+#if PRINT_HISTOGRAMS
                 kl_histogram_printf(&filter_encode);
+#endif
         }
 #endif
 

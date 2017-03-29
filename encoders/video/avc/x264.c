@@ -309,8 +309,10 @@ for (int m = 0; m < i_nal; m++) {
 
 	if (histogram_dump++ > 240) {
 		histogram_dump = 0;
+#if PRINT_HISTOGRAMS
 		kl_histogram_printf(&frame_encode);
 		kl_histogram_printf(&gop_encode);
+#endif
 	}
 #endif
 

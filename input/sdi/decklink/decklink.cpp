@@ -595,7 +595,9 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
         kl_histogram_update(&frame_interval);
         if (histogram_dump++ > 240) {
                 histogram_dump = 0;
+#if PRINT_HISTOGRAMS
                 kl_histogram_printf(&frame_interval);
+#endif
         }
 #endif
 

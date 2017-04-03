@@ -920,7 +920,8 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 
 	if (m->opID == 0xFFFF /* Multiple Operation Message */) {
 		struct splice_entries results;
-		int r = scte35_generate_from_scte104(pkt, &results);
+		int r = scte35_generate_from_scte104(pkt, &results,
+						     decklink_ctx->stream_time / 300);
 		if (r != 0) {
 			fprintf(stderr, "Generation of SCTE-35 sections failed\n");
 		}

@@ -23,7 +23,7 @@
 #include "common/common.h"
 #include "audio.h"
 
-static void *start_filter( void *ptr )
+static void *start_filter_audio( void *ptr )
 {
     obe_raw_frame_t *raw_frame, *split_raw_frame;
     obe_aud_filter_params_t *filter_params = ptr;
@@ -91,4 +91,4 @@ static void *start_filter( void *ptr )
     return NULL;
 }
 
-const obe_aud_filter_func_t audio_filter = { start_filter };
+const obe_aud_filter_func_t audio_filter = { start_filter_audio };

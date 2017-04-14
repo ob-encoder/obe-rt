@@ -31,6 +31,7 @@
 
 #define WRITE_OSD_VALUE 0
 #define READ_OSD_VALUE 0
+#define DO_COMPRESSED 0
 
 #if HAVE_LIBKLMONITORING_KLMONITORING_H
 #define KL_PRBS_INPUT 0
@@ -955,6 +956,45 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
         if( add_to_filter_queue( decklink_ctx->h, raw_frame ) < 0 )
             goto fail;
+
+#if DO_COMPRESSED
+        { /* TODO: Compressed Audio - Process each AC3 stream detected.... and create a 
+           * frame for each distinct output PES we want.
+           */
+
+            raw_frame = new_raw_frame();
+            raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
+            raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
+            raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P; /* No specific format. The audio filter will play passthrough. */
+
+            int l = audioframe->GetSampleFrameCount() * decklink_opts_->num_channels * (32 / 8);
+            raw_frame->audio_frame.audio_data[0] = (uint8_t *)malloc(l);
+            raw_frame->audio_frame.linesize = raw_frame->audio_frame.num_channels * (32 / 8);
+
+#if 0
+printf("raw_frame->audio_frame.num_samples = %d\n", raw_frame->audio_frame.num_samples);
+printf("raw_frame->audio_frame.sample_fmt = %d\n", raw_frame->audio_frame.sample_fmt);
+printf("raw_frame->audio_frame.linesize = %d\n", raw_frame->audio_frame.linesize);
+printf("decklink_opts_->num_channels = %d\n", decklink_opts_->num_channels);
+printf("l = %d\n", l);
+#endif
+            memcpy(raw_frame->audio_frame.audio_data[0], frame_bytes, l);
+
+            raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_NONE;
+
+            raw_frame->pts = packet_time;
+            raw_frame->release_data = obe_release_audio_data;
+            raw_frame->release_frame = obe_release_frame;
+            for (int i = 0; i < decklink_ctx->device->num_input_streams; i++) {
+                if( decklink_ctx->device->streams[i]->stream_format == AUDIO_AC_3_BITSTREAM) {
+                    raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
+                    break;
+                }
+            }
+	    //add_to_queue(&decklink_ctx->h->mux_queue, coded_frame);
+            add_to_filter_queue(decklink_ctx->h, raw_frame);
+        }
+#endif
     }
 
 end:
@@ -1665,6 +1705,29 @@ static void *probe_stream( void *ptr )
             streams[i]->sample_rate = 48000;
         }
     }
+
+#if DO_COMPRESSED
+    /* Add a new output stream type, bitstream audio. */
+    if (1 || OPTION_ENABLED(smpte2038))
+    {
+        streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
+        if (!streams[cur_stream])
+            goto finish;
+
+        pthread_mutex_lock(&h->device_list_mutex);
+        streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
+        pthread_mutex_unlock(&h->device_list_mutex);
+
+        streams[cur_stream]->stream_type = STREAM_TYPE_AUDIO;
+        streams[cur_stream]->stream_format = AUDIO_AC_3_BITSTREAM;
+        streams[cur_stream]->sample_rate = 48000; /* TODO Probe this */
+        streams[cur_stream]->bitrate = 384; /* TODO Probe this */
+        streams[cur_stream]->pid = 0x124; /* TODO: hardcoded PID not currently used. */
+        if(add_non_display_services(non_display_parser, streams[cur_stream], USER_DATA_LOCATION_DVB_STREAM) < 0 )
+            goto finish;
+        cur_stream++;
+    }
+#endif
 
     /* Add a new output stream type, a TABLE_SECTION mechanism.
      * We use this to pass DVB table sections direct to the muxer,

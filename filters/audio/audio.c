@@ -48,42 +48,86 @@ static void *start_filter_audio( void *ptr )
         raw_frame = filter->queue.queue[0];
         pthread_mutex_unlock( &filter->queue.mutex );
 
-        /* ignore the video track */
-        for( int i = 1; i < h->num_encoders; i++ )
+#if 0
+printf("%s() raw_frame->input_stream_id = %d, num_encoders = %d\n", __func__, raw_frame->input_stream_id, h->num_encoders);
+        printf("%s() linesize = %d, num_samples = %d, num_channels = %d, sample_fmt = %d\n",
+                __func__,
+                raw_frame->audio_frame.linesize,
+                raw_frame->audio_frame.num_samples, raw_frame->audio_frame.num_channels,
+                raw_frame->audio_frame.sample_fmt);
+#endif
+
+        /* ignore the video track, process all PCM encoders first */
+        for (int i = 1; i < h->num_encoders; i++)
         {
-            output_stream = get_output_stream( h, h->encoders[i]->output_stream_id );
+            output_stream = get_output_stream(h, h->encoders[i]->output_stream_id);
+            if (output_stream->stream_format == AUDIO_AC_3_BITSTREAM)
+                continue; /* Ignore downstream AC3 bitstream encoders */
+
+            if (raw_frame->audio_frame.sample_fmt == AV_SAMPLE_FMT_NONE)
+                continue; /* Ignore non-pcm frames */
+
+//printf("output_stream->stream_format = %d other\n", output_stream->stream_format);
             num_channels = av_get_channel_layout_nb_channels( output_stream->channel_layout );
 
             split_raw_frame = new_raw_frame();
-            if( !split_raw_frame )
+            if (!split_raw_frame)
             {
                 syslog( LOG_ERR, "Malloc failed\n" );
                 return NULL;
             }
-            memcpy( split_raw_frame, raw_frame, sizeof(*split_raw_frame) );
-            memset( split_raw_frame->audio_frame.audio_data, 0, sizeof(split_raw_frame->audio_frame.audio_data) );
+            memcpy(split_raw_frame, raw_frame, sizeof(*split_raw_frame));
+            memset(split_raw_frame->audio_frame.audio_data, 0, sizeof(split_raw_frame->audio_frame.audio_data));
             split_raw_frame->audio_frame.linesize = split_raw_frame->audio_frame.num_channels = 0;
             split_raw_frame->audio_frame.channel_layout = output_stream->channel_layout;
 
-            if( av_samples_alloc( split_raw_frame->audio_frame.audio_data, &split_raw_frame->audio_frame.linesize, num_channels,
-                                  split_raw_frame->audio_frame.num_samples, split_raw_frame->audio_frame.sample_fmt, 0 ) < 0 )
+            if (av_samples_alloc(split_raw_frame->audio_frame.audio_data, &split_raw_frame->audio_frame.linesize, num_channels,
+                              split_raw_frame->audio_frame.num_samples, split_raw_frame->audio_frame.sample_fmt, 0) < 0)
             {
-                syslog( LOG_ERR, "Malloc failed\n" );
+                syslog(LOG_ERR, "Malloc failed\n");
                 return NULL;
             }
 
             /* TODO: offset the channel pointers by the user's request */
-            av_samples_copy( split_raw_frame->audio_frame.audio_data,
-                             &raw_frame->audio_frame.audio_data[((output_stream->sdi_audio_pair-1)<<1)+output_stream->mono_channel], 0, 0,
-                             split_raw_frame->audio_frame.num_samples, num_channels, split_raw_frame->audio_frame.sample_fmt );
+            av_samples_copy(split_raw_frame->audio_frame.audio_data,
+                            &raw_frame->audio_frame.audio_data[((output_stream->sdi_audio_pair - 1) << 1) + output_stream->mono_channel], 0, 0,
+                            split_raw_frame->audio_frame.num_samples, num_channels, split_raw_frame->audio_frame.sample_fmt);
 
-            add_to_encode_queue( h, split_raw_frame, h->encoders[i]->output_stream_id );
+            add_to_encode_queue(h, split_raw_frame, h->encoders[i]->output_stream_id);
+        } /* For all PCM encoders */
+
+        /* ignore the video track, process all AC3 bitstream encoders.... */
+	/* TODO: Only one buffer can be passed to one encoder, as the input SDI
+	 * group defines a single stream of data, so this buffer can only end up at one
+	 * ac3bitstream encoder.
+	 */
+        int didForward = 0;
+        for (int i = 1; i < h->num_encoders; i++)
+        {
+            output_stream = get_output_stream(h, h->encoders[i]->output_stream_id);
+            if (output_stream->stream_format != AUDIO_AC_3_BITSTREAM)
+                continue; /* Ignore downstream AC3 bitstream encoders */
+
+            if (raw_frame->audio_frame.sample_fmt != AV_SAMPLE_FMT_NONE)
+                continue; /* Ignore pcm frames */
+
+            /* TODO: Match the input raw frame to the output encoder, else we could send
+             * frames for ac3 encoder #2 to ac3 encoder #1.
+             */
+
+            remove_from_queue(&filter->queue);
+            add_to_encode_queue(h, raw_frame, h->encoders[i]->output_stream_id);
+            didForward = 1;
+            break;
+
+        } /* For each AC3 bitstream encoder */
+
+        if (!didForward) {
+            remove_from_queue(&filter->queue);
+            raw_frame->release_data(raw_frame);
+            raw_frame->release_frame(raw_frame);
+            raw_frame = NULL;
         }
-
-        remove_from_queue( &filter->queue );
-        raw_frame->release_data( raw_frame );
-        raw_frame->release_frame( raw_frame );
-        raw_frame = NULL;
     }
 
     free( filter_params );

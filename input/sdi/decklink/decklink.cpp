@@ -1758,6 +1758,8 @@ static void *probe_stream( void *ptr )
     device->device_type = INPUT_DEVICE_DECKLINK;
     memcpy( &device->user_opts, user_opts, sizeof(*user_opts) );
 
+    /* Upstream is responsible for freeing streams[x] allocations */
+
     /* add device */
     add_device( h, device );
 

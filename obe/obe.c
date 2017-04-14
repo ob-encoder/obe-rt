@@ -1065,6 +1065,24 @@ int obe_start( obe_t *h )
                 }
                 pthread_setname_np(h->encoders[h->num_encoders]->encoder_thread, "obe-vid-encoder");
             }
+            else if(h->output_streams[i].stream_format == AUDIO_AC_3_BITSTREAM) {
+                h->output_streams[i].sdi_audio_pair = MAX( h->output_streams[i].sdi_audio_pair, 0 );
+                aud_enc_params = calloc(1, sizeof(*aud_enc_params));
+                if(!aud_enc_params) {
+                    fprintf(stderr, "Malloc failed\n");
+                    goto fail;
+                }
+                aud_enc_params->h = h;
+                aud_enc_params->encoder = h->encoders[h->num_encoders];
+                aud_enc_params->stream = &h->output_streams[i];
+
+                if (pthread_create(&h->encoders[h->num_encoders]->encoder_thread, NULL, ac3bitstream_encoder.start_encoder, (void*)aud_enc_params ) < 0 )
+                {
+                    fprintf(stderr, "Couldn't create ac3bitstream encode thread\n");
+                    goto fail;
+                }
+                pthread_setname_np(h->encoders[h->num_encoders]->encoder_thread, "obe-aud-encoder");
+            }
             else if( h->output_streams[i].stream_format == AUDIO_AC_3 || h->output_streams[i].stream_format == AUDIO_E_AC_3 ||
                      h->output_streams[i].stream_format == AUDIO_AAC  || h->output_streams[i].stream_format == AUDIO_MP2 )
             {

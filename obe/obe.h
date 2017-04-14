@@ -137,6 +137,7 @@ enum stream_formats_e
     AUDIO_E_AC_3, /* ATSC A/52B Annex E / Enhanced AC-3 */
 //    AUDIO_E_DIST, /* E Distribution Audio */
     AUDIO_AAC,
+    AUDIO_AC_3_BITSTREAM,   /* ATSC A/52B / AC-3 Bitstream passthorugh */
 
     SUBTITLES_DVB,
     MISC_TELETEXT,

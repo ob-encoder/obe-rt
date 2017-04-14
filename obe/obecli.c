@@ -70,7 +70,7 @@ static const char * const input_video_connections[]  = { "sdi", "hdmi", "optical
 static const char * const input_audio_connections[]  = { "embedded", "aes-ebu", "analogue", 0 };
 static const char * const ttx_locations[]            = { "dvb-ttx", "dvb-vbi", "both", 0 };
 static const char * const stream_actions[]           = { "passthrough", "encode", 0 };
-static const char * const encode_formats[]           = { "", "avc", "", "", "mp2", "ac3", "e-ac3", "aac", 0 };
+static const char * const encode_formats[]           = { "", "avc", "", "", "mp2", "ac3", "e-ac3", "aac", "a52", 0 };
 static const char * const frame_packing_modes[]      = { "none", "checkerboard", "column", "row", "side-by-side", "top-bottom", "temporal", 0 };
 static const char * const teletext_types[]           = { "", "initial", "subtitle", "additional-info", "program-schedule", "hearing-imp", 0 };
 static const char * const audio_types[]              = { "undefined", "clean-effects", "hearing-impaired", "visual-impaired", 0 };
@@ -776,8 +776,8 @@ static int set_stream( char *command, obecli_command_t *child )
                 FAIL_IF_ERROR( action && ( check_enum_value( action, stream_actions ) < 0 ),
                               "Invalid stream action\n" );
 
-                FAIL_IF_ERROR( format && ( check_enum_value( format, encode_formats ) < 0 ),
-                              "Invalid stream format\n" );
+                FAIL_IF_ERROR( format && ( check_enum_value(format, encode_formats ) < 0),
+                              "Invalid stream format '%s'\n", format);
 
                 FAIL_IF_ERROR( aac_profile && ( check_enum_value( aac_profile, aac_profiles ) < 0 ),
                               "Invalid aac encapsulation\n" );
@@ -826,7 +826,10 @@ static int set_stream( char *command, obecli_command_t *child )
                 }
                 else if( cli.output_streams[output_stream_id].stream_format == AUDIO_AC_3 )
                     default_bitrate = 192;
-                else if( cli.output_streams[output_stream_id].stream_format == AUDIO_E_AC_3 )
+                else if( cli.output_streams[output_stream_id].stream_format == AUDIO_AC_3_BITSTREAM) {
+                    // Avoid a warning later
+                    default_bitrate = 192;
+                } else if( cli.output_streams[output_stream_id].stream_format == AUDIO_E_AC_3 )
                     default_bitrate = 192;
                 else // AAC
                 {
@@ -1264,6 +1267,9 @@ static int show_input_streams( char *command, obecli_command_t *child )
                         stream->frame_data[j].source == VBI_RAW ? "VBI" : stream->frame_data[j].source == VBI_VIDEO_INDEX ? "VII" : "VANC", format_name );
             }
         }
+        else if (stream->stream_type == STREAM_TYPE_AUDIO && stream->stream_format == AUDIO_AC_3_BITSTREAM) {
+            printf( "Input-stream-id: %d - Audio: %s %dKb %ikHz\n", stream->input_stream_id, format_name, stream->bitrate, stream->sample_rate / 1000);
+        }
         else if( stream->stream_type == STREAM_TYPE_AUDIO )
         {
             if( !stream->channel_layout )
@@ -1529,6 +1535,7 @@ static int probe_device( char *command, obecli_command_t *child )
         {
             cli.output_streams[i].input_stream_id = i;
             cli.output_streams[i].output_stream_id = cli.program.streams[i].input_stream_id;
+            cli.output_streams[i].stream_format = cli.program.streams[i].stream_format;
             if( cli.program.streams[i].stream_type == STREAM_TYPE_VIDEO )
             {
                 cli.output_streams[i].video_anc.cea_608 = cli.output_streams[i].video_anc.cea_708 = 1;

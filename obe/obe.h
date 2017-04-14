@@ -234,7 +234,7 @@ typedef struct
     int sample_format;
 
     /* Compressed Audio */
-    int bitrate;
+    int bitrate; /* Kbps */
     int aac_is_latm; /* LATM is sometimes known as MPEG-4 Encapsulation */
 
     /** Subtitles **/

@@ -51,6 +51,9 @@ extern "C"
 #include "input/sdi/ancillary.h"
 #include "input/sdi/vbi.h"
 #include "input/sdi/x86/sdi.h"
+#if DO_COMPRESSED
+#include "input/sdi/smpte337_detector.h"
+#endif
 #include <libavresample/avresample.h>
 #include <libavutil/opt.h>
 #include <libklvanc/vanc.h>
@@ -262,6 +265,9 @@ typedef struct
 
 #if KL_PRBS_INPUT
     struct prbs_context_s prbs;
+#endif
+#if DO_COMPRESSED
+    struct smpte337_detector_s *smpte337_detector;
 #endif
 
 } decklink_ctx_t;
@@ -875,6 +881,25 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     /* TODO: probe SMPTE 337M audio */
 
+#if DO_COMPRESSED
+    if (audioframe && decklink_opts_->probe) {
+        audioframe->GetBytes(&frame_bytes);
+
+        /* Look for bitstream in audio channels 0 and 1 */
+        /* TODO: Examine other channels. */
+        if (decklink_ctx->smpte337_detector) {
+// MMM
+            smpte337_detector_write(decklink_ctx->smpte337_detector, (uint8_t *)frame_bytes,
+                audioframe->GetSampleFrameCount(),
+                32,
+                decklink_opts_->num_channels,
+                decklink_opts_->num_channels * (32 / 8),
+                2);
+        }
+
+    }
+#endif
+
     if( audioframe && !decklink_opts_->probe )
     {
         audioframe->GetBytes( &frame_bytes );
@@ -1033,6 +1058,13 @@ printf("%s() closing vanc\n", __func__);
         smpte2038_packetizer_free(&decklink_ctx->smpte2038_ctx);
         decklink_ctx->smpte2038_ctx = 0;
     }
+
+#if DO_COMPRESSED
+    if (decklink_ctx->smpte337_detector) {
+        smpte337_detector_free(decklink_ctx->smpte337_detector);
+        decklink_ctx->smpte337_detector = 0;
+    }
+#endif
 
     if( decklink_ctx->p_config )
         decklink_ctx->p_config->Release();
@@ -1262,6 +1294,25 @@ static struct vanc_callbacks_s callbacks =
 };
 /* End: VANC Callbacks */
 
+#if DO_COMPRESSED
+static void * detector_callback(void *user_context,
+        struct smpte337_detector_s *ctx,
+        uint8_t datamode, uint8_t datatype, uint32_t payload_bitCount)
+{
+        printf("%s() datamode = %d [%sbit], datatype = %d [payload: %s]"
+                ", payload_bitcount = %d\n",
+                __func__,
+                datamode,
+                datamode == 0 ? "16" :
+                datamode == 1 ? "20" :
+                datamode == 2 ? "24" : "Reserved",
+                datatype,
+                datatype == 1 ? "SMPTE338 / AC-3 (audio) data" : "TBD",
+                payload_bitCount);
+        return 0;
+}
+#endif
+
 static int open_card( decklink_opts_t *decklink_opts )
 {
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
@@ -1310,6 +1361,10 @@ static int open_card( decklink_opts_t *decklink_opts )
         }
     } else
 	callbacks.all = NULL;
+
+#if DO_COMPRESSED
+    decklink_ctx->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback, 0);
+#endif
 
 #if 1
 #pragma message "SCTE104 verbose debugging enabled."

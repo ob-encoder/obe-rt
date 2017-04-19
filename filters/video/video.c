@@ -686,7 +686,7 @@ static int encapsulate_user_data( obe_raw_frame_t *raw_frame, obe_int_input_stre
     return ret;
 }
 
-static void *start_filter( void *ptr )
+static void *start_filter_video( void *ptr )
 {
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
     kl_histogram_reset(&filter_encode, "video frame filter", KL_BUCKET_VIDEO);
@@ -806,4 +806,4 @@ end:
     return NULL;
 }
 
-const obe_vid_filter_func_t video_filter = { start_filter };
+const obe_vid_filter_func_t video_filter = { start_filter_video };

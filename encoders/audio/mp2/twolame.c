@@ -32,13 +32,15 @@
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 #include <libklmonitoring/klmonitoring.h>
-static struct kl_histogram audio_encode;
-static int histogram_dump = 0;
 #endif
 
-static void *start_encoder( void *ptr )
+static void *start_encoder_mp2( void *ptr )
 {
+    printf("%s()\n", __func__);
+
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+    struct kl_histogram audio_encode;
+    int histogram_dump = 0;
     kl_histogram_reset(&audio_encode, "audio frame encode", KL_BUCKET_VIDEO);
 #endif
     obe_aud_enc_params_t *enc_params = ptr;
@@ -231,4 +233,4 @@ end:
     return NULL;
 }
 
-const obe_aud_enc_func_t twolame_encoder = { start_encoder };
+const obe_aud_enc_func_t twolame_encoder = { start_encoder_mp2 };

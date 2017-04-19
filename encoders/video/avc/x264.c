@@ -126,6 +126,7 @@ static void *start_encoder( void *ptr )
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
     kl_histogram_reset(&frame_encode, "video frame encode", KL_BUCKET_VIDEO);
     kl_histogram_reset(&gop_encode, "GOP compression time", KL_BUCKET_VIDEO);
+    //kl_histogram_rrd_gauge_enable(&gop_encode, "/tmp/gopcompression.rrd", "X264 GOP Compression");
     kl_histogram_cumulative_initialize(&gop_encode);
 #endif
 

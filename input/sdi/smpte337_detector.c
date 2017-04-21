@@ -99,8 +99,7 @@ static size_t smpte337_detector_write_32b(struct smpte337_detector_s *ctx, uint8
 {
 	size_t consumed = 0;
 
-	printf("Writing %d frames, span = %d, sampleDepth = %d\n", audioFrames, spanCount,
-		sampleDepth);
+	//printf("Writing %d frames, span = %d, sampleDepth = %d\n", audioFrames, spanCount, sampleDepth);
 	uint32_t *p = (uint32_t *)buf;
 	for (int i = 0; i < audioFrames; i++) {
 

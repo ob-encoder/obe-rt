@@ -289,6 +289,7 @@ typedef struct
     int enable_smpte2038;
     int enable_scte35;
     int enable_vanc_cache;
+    int enable_bitstream_audio;
 
     /* Output */
     int probe_success;
@@ -595,9 +596,6 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
         }
     }
 
-    if (OPTION_ENABLED_(vanc_cache)) {
-        decklink_ctx->smpte337_detected_ac3 = 1;
-    }
 
     av_init_packet( &pkt );
 
@@ -885,7 +883,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     /* TODO: probe SMPTE 337M audio */
 
-    if (audioframe && decklink_opts_->probe) {
+    if (audioframe && OPTION_ENABLED_(bitstream_audio)) {
         audioframe->GetBytes(&frame_bytes);
 
         /* Look for bitstream in audio channels 0 and 1 */
@@ -1334,7 +1332,6 @@ static int open_card( decklink_opts_t *decklink_opts )
     kl_histogram_reset(&frame_interval, "video frame intervals", KL_BUCKET_VIDEO);
 #endif
     decklink_ctx_t *decklink_ctx = &decklink_opts->decklink_ctx;
-printf("%s() ctx = %p\n", __func__, decklink_ctx);
     int         found_mode;
     int         ret = 0;
     int         i;
@@ -1378,8 +1375,11 @@ printf("%s() ctx = %p\n", __func__, decklink_ctx);
     } else
 	callbacks.all = NULL;
 
-    decklink_ctx->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback,
-        decklink_ctx);
+    decklink_ctx->smpte337_detected_ac3 = 0;
+    if (OPTION_ENABLED(bitstream_audio)) {
+        decklink_ctx->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback,
+            decklink_ctx);
+    }
 
 #if 1
 #pragma message "SCTE104 verbose debugging enabled."
@@ -1710,6 +1710,7 @@ static void *probe_stream( void *ptr )
     decklink_opts->enable_smpte2038 = user_opts->enable_smpte2038;
     decklink_opts->enable_scte35 = user_opts->enable_scte35;
     decklink_opts->enable_vanc_cache = user_opts->enable_vanc_cache;
+    decklink_opts->enable_bitstream_audio = user_opts->enable_bitstream_audio;
 
     decklink_opts->probe = non_display_parser->probe = 1;
 
@@ -1940,6 +1941,7 @@ static void *open_input( void *ptr )
     decklink_opts->enable_smpte2038 = user_opts->enable_smpte2038;
     decklink_opts->enable_scte35 = user_opts->enable_scte35;
     decklink_opts->enable_vanc_cache = user_opts->enable_vanc_cache;
+    decklink_opts->enable_bitstream_audio = user_opts->enable_bitstream_audio;
 
     decklink_ctx = &decklink_opts->decklink_ctx;
 

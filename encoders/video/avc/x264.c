@@ -154,7 +154,6 @@ static void *start_encoder( void *ptr )
 #if 0
     enc_params->avc_param.i_csp = X264_CSP_I422;
 #endif
-printf("enc_params->avc_param.i_csp = 0x%x (FIXED)\n", enc_params->avc_param.i_csp);
 
     s = x264_encoder_open( &enc_params->avc_param );
     if( !s )

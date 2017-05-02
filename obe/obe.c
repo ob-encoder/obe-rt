@@ -694,6 +694,7 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
     {
         fprintf( stderr, "Could not probe device \n" );
         program = NULL;
+        args = NULL;
         goto fail;
     }
 

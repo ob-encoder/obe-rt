@@ -883,22 +883,23 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     /* TODO: probe SMPTE 337M audio */
 
-    if (audioframe && OPTION_ENABLED_(bitstream_audio)) {
-        audioframe->GetBytes(&frame_bytes);
+    if (audioframe) {
+        if(OPTION_ENABLED_(bitstream_audio)) {
+            audioframe->GetBytes(&frame_bytes);
 
-        /* Look for bitstream in audio channels 0 and 1 */
-        /* TODO: Examine other channels. */
-        /* TODO: Kinda pointless caching a successful find, because those
-         * values held in decklink_ctx are thrown away when the probe completes. */
-        if (decklink_ctx->smpte337_detector) {
-            smpte337_detector_write(decklink_ctx->smpte337_detector, (uint8_t *)frame_bytes,
-                audioframe->GetSampleFrameCount(),
-                32,
-                decklink_opts_->num_channels,
-                decklink_opts_->num_channels * (32 / 8),
-                2);
+            /* Look for bitstream in audio channels 0 and 1 */
+            /* TODO: Examine other channels. */
+            /* TODO: Kinda pointless caching a successful find, because those
+             * values held in decklink_ctx are thrown away when the probe completes. */
+            if (decklink_ctx->smpte337_detector) {
+                smpte337_detector_write(decklink_ctx->smpte337_detector, (uint8_t *)frame_bytes,
+                    audioframe->GetSampleFrameCount(),
+                    32,
+                    decklink_opts_->num_channels,
+                    decklink_opts_->num_channels * (32 / 8),
+                    2);
+            }
         }
-
     }
 
 #if 0

@@ -270,6 +270,7 @@ typedef struct
 
     /* Have we detected bitstream AC3 on audio channels 0/1? */
     int smpte337_detected_ac3;
+    int smpte337_frames_written;
 } decklink_ctx_t;
 
 typedef struct
@@ -616,7 +617,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             syslog( LOG_ERR, "Decklink card index %i: No input signal detected", decklink_opts_->card_idx );
             return S_OK;
         }
-        else if( decklink_opts_->probe )
+        else if (decklink_opts_->probe && decklink_ctx->smpte337_frames_written > 6)
             decklink_opts_->probe_success = 1;
 
         /* use SDI ticks as clock source */
@@ -892,6 +893,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             /* TODO: Kinda pointless caching a successful find, because those
              * values held in decklink_ctx are thrown away when the probe completes. */
             if (decklink_ctx->smpte337_detector) {
+                decklink_ctx->smpte337_frames_written++;
                 smpte337_detector_write(decklink_ctx->smpte337_detector, (uint8_t *)frame_bytes,
                     audioframe->GetSampleFrameCount(),
                     32,

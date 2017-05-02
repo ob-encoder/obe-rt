@@ -165,8 +165,8 @@ static void * detector_callback(void *user_context,
 	 */
 	swap_buffer_16b(payload, payload_byteCount / 2);
 	if (validateCRC(payload, payload_byteCount) != 1) {
+#if 0
 		/* Validate failed. */
-#if 1
 		swap_buffer_16b(payload, payload_byteCount / 2);
 		static int fcnt = 0;
 		char fn[64];

@@ -40,7 +40,8 @@ struct smpte337_detector_s;
 
 typedef void (*smpte337_detector_callback)(void *user_context,
 	struct smpte337_detector_s *ctx, 
-	uint8_t datamode, uint8_t datatype, uint32_t payload_bitCount);
+	uint8_t datamode, uint8_t datatype, uint32_t payload_bitCount,
+	uint8_t *payload);
 
 struct smpte337_detector_s
 {

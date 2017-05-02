@@ -37,7 +37,7 @@ struct smpte337_detector_s *smpte337_detector_alloc(smpte337_detector_callback c
 
 	ctx->cb = cb;
 	ctx->cbContext = cbContext;
-	ctx->rb = rb_new(32 * 1024, 256 * 1024);
+	ctx->rb = rb_new_threadsafe(32 * 1024, 256 * 1024);
 	if (!ctx->rb) {
 		free(ctx);
 		return NULL;
@@ -57,10 +57,9 @@ void smpte337_detector_free(struct smpte337_detector_s *ctx)
  * to the caller.
  */
 static void handleCallback(struct smpte337_detector_s *ctx, uint8_t datamode, uint8_t datatype,
-	uint32_t payload_bitCount)
+	uint32_t payload_bitCount, uint8_t *payload)
 {
-	ctx->cb(ctx->cbContext, ctx, datamode, datatype, payload_bitCount);
-	rb_empty(ctx->rb);
+	ctx->cb(ctx->cbContext, ctx, datamode, datatype, payload_bitCount, payload);
 }
 
 static size_t smpte337_detector_write_16b(struct smpte337_detector_s *ctx, uint8_t *buf,
@@ -82,9 +81,17 @@ static size_t smpte337_detector_write_16b(struct smpte337_detector_s *ctx, uint8
 			uint8_t *x = (uint8_t *)q;
 
 			/* Flush the word into the fifo MSB first */
-			rb_write(ctx->rb, ((const char *)x) + 1, 1);
-			rb_write(ctx->rb, ((const char *)x) + 0, 1);
+			int didOverflow = 0;
+			rb_write_with_state(ctx->rb, ((const char *)x) + 1, 1, &didOverflow);
+			if (didOverflow) {
+				fprintf(stderr, "overflow occured.\n");
+			}
+			rb_write_with_state(ctx->rb, ((const char *)x) + 0, 1, &didOverflow);
+			if (didOverflow) {
+				fprintf(stderr, "overflow occured.\n");
+			}
 			q++;
+			consumed += 2;
 		}
 
 		p += (frameStrideBytes / sizeof(uint16_t));
@@ -99,7 +106,7 @@ static size_t smpte337_detector_write_32b(struct smpte337_detector_s *ctx, uint8
 {
 	size_t consumed = 0;
 
-	//printf("Writing %d frames, span = %d, sampleDepth = %d\n", audioFrames, spanCount, sampleDepth);
+	//printf("%s() Writing %d frames, span = %d, sampleDepth = %d\n", __func__, audioFrames, spanCount, sampleDepth);
 	uint32_t *p = (uint32_t *)buf;
 	for (int i = 0; i < audioFrames; i++) {
 
@@ -111,9 +118,18 @@ static size_t smpte337_detector_write_32b(struct smpte337_detector_s *ctx, uint8
 			uint8_t *x = (uint8_t *)q;
 
 			/* Flush the word into the fifo MSB first */
-			rb_write(ctx->rb, ((const char *)x) + 3, 1);
-			rb_write(ctx->rb, ((const char *)x) + 2, 1);
+			int didOverflow = 0;
+			rb_write_with_state(ctx->rb, ((const char *)x) + 3, 1, &didOverflow);
+			if (didOverflow) {
+				fprintf(stderr, "overflow occured.\n");
+			}
+			rb_write_with_state(ctx->rb, ((const char *)x) + 2, 1, &didOverflow);
+			if (didOverflow) {
+				fprintf(stderr, "overflow occured.\n");
+			}
 			q++;
+
+			consumed += 2;
 		}
 
 		p += (frameStrideBytes / sizeof(uint32_t));
@@ -123,9 +139,16 @@ static size_t smpte337_detector_write_32b(struct smpte337_detector_s *ctx, uint8
 
 static void run_detector(struct smpte337_detector_s *ctx)
 {
+	int skipped = 0;
+
+	int skip_used_start = rb_used(ctx->rb);
+	int skip_used_end = 0;
+
 #define PEEK_LEN 16
 	uint8_t dat[PEEK_LEN];
 	while(1) {
+//		dat[0] = 0x00;
+//printf("rb_used = %d\n", rb_used(ctx->rb));
 		if (rb_used(ctx->rb) < PEEK_LEN)
 			break;
 
@@ -137,15 +160,41 @@ static void run_detector(struct smpte337_detector_s *ctx)
 #endif
 		/* Find the supported patterns */
 		if (dat[0] == 0xF8 && dat[1] == 0x72 && dat[2] == 0x4e && dat[3] == 0x1f) {
+			skip_used_end = rb_used(ctx->rb);
+//printf("Skipped %d bytes looking for the SMPTE337 header, used %d bytes\n", skipped, skip_used_start - skip_used_end);
 			/* pa = 16bit, pb = 16bit */
 			if ((dat[5] & 0x1f) == 0x01) {
 				/* Bits 0-4 datatype, 1 = AC3 */
 				/* Bits 5-6 datamode, 0 = 16bit */
 				/* Bits   7 errorflg, 0 = no error */
-				handleCallback(ctx, (dat[5] >> 5) & 0x03, dat[5] & 0x1f,
-					(dat[6] << 8) | dat[7]);
-				break;
+				uint32_t payload_bitCount = (dat[6] << 8) | dat[7];
+				uint32_t payload_byteCount = payload_bitCount / 8;
+				
+				if (rb_used(ctx->rb) >= (8 + payload_byteCount)) {
+					char *payload = NULL;
+					size_t l = rb_read_alloc(ctx->rb, &payload, 8 + payload_byteCount);
+					if (l != (8 + payload_byteCount)) {
+						fprintf(stderr, "smpte337_detector: warning, rb read failure.\n");
+
+						/* Intensionally flush the ring and start acquisition again. */
+						rb_empty(ctx->rb);
+					} else {
+						handleCallback(ctx, (dat[5] >> 5) & 0x03, dat[5] & 0x1f, payload_bitCount, (uint8_t *)payload + 8);
+					}
+					if (payload)
+						free(payload);
+				} else {
+					/* Not enough in the ring buffer, come back next time. */
+					break;
+				}
+
+			} else {
+				rb_discard(ctx->rb, 1); /* Pop a byte, and continue the search */
+				skipped++;
 			}
+		} else {
+			rb_discard(ctx->rb, 1); /* Pop a byte, and continue the search */
+			skipped++;
 		}
 #if 0
 		else
@@ -162,9 +211,7 @@ static void run_detector(struct smpte337_detector_s *ctx)
 		}
 #endif
 		
-		rb_read(ctx->rb, (char *)dat, 1); /* Pop a byte, and continue the search */
-	}
-
+	} /* while */
 }
 
 size_t smpte337_detector_write(struct smpte337_detector_s *ctx, uint8_t *buf,
@@ -190,5 +237,6 @@ size_t smpte337_detector_write(struct smpte337_detector_s *ctx, uint8_t *buf,
 	/* Now all the fifo contains byte stream re-ordered data, run the detector. */
 	run_detector(ctx);
 
+//	printf("%s() wrote %d bytes to ring, ring used %d unused %d\n", __func__, ret, rb_used(ctx->rb), rb_unused(ctx->rb));
 	return ret;
 }

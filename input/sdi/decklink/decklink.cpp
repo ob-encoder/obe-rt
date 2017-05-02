@@ -901,6 +901,28 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     }
 
+#if 0
+    if(audioframe) {
+        static int fcnt = 0;
+        char fn[64];
+        sprintf(fn, "/tmp/input%08d.bin", fcnt++);
+        FILE *fh = fopen(fn, "wb");
+        if (fh) {
+        	audioframe->GetBytes( &frame_bytes );
+		int len = audioframe->GetSampleFrameCount() * decklink_opts_->num_channels * (32 / 8);
+                fwrite(frame_bytes, 1, len, fh);
+                fclose(fh);
+        }
+
+        if (fcnt >= 100) {
+                sprintf(fn, "/tmp/input%08d.bin", fcnt - 100);
+                unlink(fn);
+        }
+
+//printf("ac3 fcnt = %d\n", fcnt);
+	}
+#endif
+
     if( audioframe && !decklink_opts_->probe )
     {
         audioframe->GetBytes( &frame_bytes );
@@ -1301,12 +1323,12 @@ static struct vanc_callbacks_s callbacks =
 
 static void * detector_callback(void *user_context,
         struct smpte337_detector_s *ctx,
-        uint8_t datamode, uint8_t datatype, uint32_t payload_bitCount)
+        uint8_t datamode, uint8_t datatype, uint32_t payload_bitCount, uint8_t *payload)
 {
 	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)user_context;
 #if 0
         printf("%s() datamode = %d [%sbit], datatype = %d [payload: %s]"
-                ", payload_bitcount = %d\n",
+                ", payload_bitcount = %d, payload = %p\n",
                 __func__,
                 datamode,
                 datamode == 0 ? "16" :
@@ -1314,7 +1336,8 @@ static void * detector_callback(void *user_context,
                 datamode == 2 ? "24" : "Reserved",
                 datatype,
                 datatype == 1 ? "SMPTE338 / AC-3 (audio) data" : "TBD",
-                payload_bitCount);
+                payload_bitCount,
+		payload);
 #endif
 
 	if (datatype == 1 /* AC3 */) {

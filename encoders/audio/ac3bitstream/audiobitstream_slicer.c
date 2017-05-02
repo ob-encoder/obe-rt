@@ -34,6 +34,8 @@
 
 #define U16_SWAP(n) ((n) >> 8 | ((n) & 0xff) << 8)
 
+int dodump = 0;
+
 /* Polynomial table for AC3/AC5 checksums 16+15+1+1 */
 static const uint16_t crc_tab[] =
 {
@@ -184,8 +186,9 @@ static void swap_buffer_16b(uint8_t *buf, int numberWords)
  * contents are valid (check crcs), and pass a byte stream
  * to the caller.
  */
-static void handleCallback(struct audiobitstream_slicer_c *ctx)
+static int handleCallback(struct audiobitstream_slicer_c *ctx)
 {
+	int ret = 0;
 	if (ctx->cb) {
 		size_t buflen = rb_used(ctx->rb);
 		uint8_t *buf = malloc(buflen);
@@ -219,12 +222,14 @@ static void handleCallback(struct audiobitstream_slicer_c *ctx)
 				 * a word stream. */
 				swap_buffer_16b(buf, buflen / 2);
 				ctx->cb(ctx->cbContext, ctx, (uint8_t *)buf, (uint32_t)buflen);
+				ret = 0;
 			} else {
-#if 0
+#if 1
+				fprintf(stderr, "CRC buflen = %d\n", buflen);
 				swap_buffer_16b(buf, buflen / 2);
 				static int fcnt = 0;
 				char fn[64];
-				sprintf(fn, "crc%08d.bin", fcnt++);
+				sprintf(fn, "/tmp/crc%08d.bin", fcnt++);
 				FILE *fh = fopen(fn, "wb");
 				if (fh) {
 					fwrite(buf, 1, buflen, fh);
@@ -233,11 +238,13 @@ static void handleCallback(struct audiobitstream_slicer_c *ctx)
 				printf("crc fcnt = %d\n", fcnt);
 #endif
 				free(buf); /* User can't free the buffer if we haven't given it to them. */
+				ret = -1;
 			}
 		}
 	}
 	rb_empty(ctx->rb);
 	ctx->words_per_syncframe = 0;
+	return ret;
 }
 
 static size_t audiobitstream_slicer_write_16b(struct audiobitstream_slicer_c *ctx, uint8_t *buf,
@@ -349,49 +356,65 @@ static size_t audiobitstream_slicer_write_32b(struct audiobitstream_slicer_c *ct
 					else if (fscod == 2 /* 32 */)
 						ctx->words_per_syncframe = s->fs32;
 
-					//printf("words_per_syncframe = %d fscod = %02x frmsizecod = %02x\n", ctx->words_per_syncframe, fscod, frmsizecod);
+					printf("words_per_syncframe = %d fscod = %02x frmsizecod = %02x\n", ctx->words_per_syncframe, fscod, frmsizecod);
 				}
 			}
 		}
 
-		//printf("\nf %d -- ", i);
+//		printf("f %d -- ", i);
 		uint32_t *q = p;
 		for (int k = 0; k < spanCount; k++) {
 			/* Sample in N words into a byte orientied buffer */
-			//printf("0x%08x ", *q);
-			if (ctx->state == S_SEARCHING_SYNC && *q == AUDIO_SLICER_SYNC_CODE_AC3 << 16) {
-				ctx->state = S_ACQUIRED_SYNC1;
-				rb_write(ctx->rb, ((const char *)q) + 2, 2);
-				q++;
-				continue;
-			}
+			if (dodump)
+				printf("0x%08x [%s] used=%d , ", *q,
+					ctx->state == S_ACQUIRED_SYNC1 ? "SYNC  " :
+					ctx->state == S_SEARCHING_SYNC ? "SEARCH" : "Undefined",
+					(rb_used(ctx->rb) + 2) / 2);
 			if (ctx->state == S_ACQUIRED_SYNC1 && *q == AUDIO_SLICER_SYNC_CODE_AC3 << 16 &&
-				rb_used(ctx->rb) * 2 == ctx->words_per_syncframe) {
+				((rb_used(ctx->rb) * 2) == ctx->words_per_syncframe)) {
+//printf("a\n");
 				if (rb_used(ctx->rb)) {
 					handleCallback(ctx);
 				}
+				ctx->state = S_SEARCHING_SYNC;
+			}
+			if (ctx->state == S_SEARCHING_SYNC && *q == AUDIO_SLICER_SYNC_CODE_AC3 << 16) {
+//printf("b\n");
+				ctx->state = S_ACQUIRED_SYNC1;
 				rb_write(ctx->rb, ((const char *)q) + 2, 2);
 				q++;
-				ctx->state = S_ACQUIRED_SYNC1;
 				continue;
 			}
 			if (ctx->state == S_ACQUIRED_SYNC1 && *q == AUDIO_SLICER_SYNC_CODE_AC3 << 16 &&
-				rb_used(ctx->rb) * 2 != ctx->words_per_syncframe) {
+				((rb_used(ctx->rb) * 2) != ctx->words_per_syncframe)) {
+//printf("e ");
 				rb_write(ctx->rb, ((const char *)q) + 2, 2);
 				q++;
+				if ((ctx->words_per_syncframe * 2) == rb_used(ctx->rb)) {
+					handleCallback(ctx);
+					ctx->state = S_SEARCHING_SYNC;
+				}
 				continue;
 			}
 			if (ctx->state == S_ACQUIRED_SYNC1 && *q != AUDIO_SLICER_SYNC_CODE_AC3 << 16) {
 				rb_write(ctx->rb, ((const char *)q) + 2, 2);
 				q++;
 
-				if (ctx->words_per_syncframe * 2 == rb_used(ctx->rb)) {
+//printf("c swpf = %d ", ctx->words_per_syncframe);
+				if ((ctx->words_per_syncframe * 2) == rb_used(ctx->rb)) {
 					handleCallback(ctx);
 					ctx->state = S_SEARCHING_SYNC;
 				}
 				continue;
 			}
+//printf("d ");
+			if (ctx->state == S_SEARCHING_SYNC && rb_used(ctx->rb))
+			{
+				printf("something went wrong?\n");
+				exit(0);
+			}
 		}
+//		printf("\n");
 
 		p += (frameStrideBytes / sizeof(uint32_t));
 	}
@@ -410,18 +433,36 @@ size_t audiobitstream_slicer_write(struct audiobitstream_slicer_c *ctx, uint8_t 
 
 	size_t ret = 0;
 
-#if 0
+#if 1
         static int fcnt = 0;
         char fn[64];
-        sprintf(fn, "write%08d.bin", fcnt++);
+        sprintf(fn, "/tmp/write%08d.bin", fcnt++);
         FILE *fh = fopen(fn, "wb");
         if (fh) {
                 fwrite(buf, 1, audioFrames * channelsPerFrame * (sampleDepth / 8), fh);
                 fclose(fh);
         }
+
+	if (fcnt >= 100) {
+		sprintf(fn, "/tmp/write%08d.bin", fcnt - 100);
+		unlink(fn);
+	}
+
 //printf("ac3 fcnt = %d\n", fcnt);
 #endif
 
+fprintf(stderr, "rbused = %d\n", rb_used(ctx->rb));
+if (rb_used(ctx->rb) > 32768) {
+fprintf(stderr, "Terminating due to bug.\n");
+
+FILE *fh = fopen("/tmp/ringbuffer.bin", "wb");
+if (fh) {
+  rb_fwrite(ctx->rb, fh);
+  fclose(fh);
+}
+
+exit(0);
+}
 	if (sampleDepth == 16) {
 		ret = audiobitstream_slicer_write_16b(ctx, buf, audioFrames, sampleDepth,
 			channelsPerFrame, frameStrideBytes, spanCount);

@@ -141,14 +141,9 @@ static void run_detector(struct smpte337_detector_s *ctx)
 {
 	int skipped = 0;
 
-	int skip_used_start = rb_used(ctx->rb);
-	int skip_used_end = 0;
-
 #define PEEK_LEN 16
 	uint8_t dat[PEEK_LEN];
 	while(1) {
-//		dat[0] = 0x00;
-//printf("rb_used = %d\n", rb_used(ctx->rb));
 		if (rb_used(ctx->rb) < PEEK_LEN)
 			break;
 
@@ -160,8 +155,6 @@ static void run_detector(struct smpte337_detector_s *ctx)
 #endif
 		/* Find the supported patterns */
 		if (dat[0] == 0xF8 && dat[1] == 0x72 && dat[2] == 0x4e && dat[3] == 0x1f) {
-			skip_used_end = rb_used(ctx->rb);
-//printf("Skipped %d bytes looking for the SMPTE337 header, used %d bytes\n", skipped, skip_used_start - skip_used_end);
 			/* pa = 16bit, pb = 16bit */
 			if ((dat[5] & 0x1f) == 0x01) {
 				/* Bits 0-4 datatype, 1 = AC3 */

@@ -55,7 +55,6 @@ obecli_SOURCES += ../encoders/encoder_smoothing.c
 obecli_SOURCES += ../encoders/audio/lavc/lavc.c
 obecli_SOURCES += ../encoders/audio/mp2/twolame.c
 obecli_SOURCES += ../encoders/audio/ac3bitstream/ac3bitstream.c
-obecli_SOURCES += ../encoders/audio/ac3bitstream/audiobitstream_slicer.c
 obecli_SOURCES += ../encoders/audio/ac3bitstream/klringbuffer.c
 obecli_SOURCES += ../encoders/video/avc/x264.c
 obecli_SOURCES += ../common/network/udp/udp.c

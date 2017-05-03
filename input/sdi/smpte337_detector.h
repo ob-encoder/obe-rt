@@ -20,7 +20,9 @@
  */
 
 /* A tool to inspect audio buffers from blackmagic hardware, analyze channels start + span,
- * detect SMPTE337 preable headers and inform the caller.
+ * detect SMPTE337 preable headers and inform the caller. We're a helper framework than
+ * can be used to extract AC3 bitstream audio from SDI, or other bitstream codecs for that
+ * matter.
  */
 
 #ifndef _SMPTE337_DETECTOR_H 

@@ -74,14 +74,13 @@ static const uint16_t crc_tab[] =
 static uint16_t crc_calc(const uint16_t *words, uint32_t wordCount)
 {
 	uint16_t crc = 0;
-	for(uint32_t i = 0; i < wordCount; i++) {
+	for (uint32_t i = 0; i < wordCount; i++) {
 		uint8_t t = (uint8_t)((words[i] >> 8) & 0xFF);
 		crc = (crc << 8) ^ crc_tab[((crc >> 8) & 0xFF) ^ t];
 
 		t = (uint8_t)(words[i] & 0xFF);
 		crc = (crc << 8) ^ crc_tab[((crc >> 8 ) & 0xFF) ^ t];
 	}
-	// printf("crc = 0x%04x\n", crc);
 	return crc; 
 }
 

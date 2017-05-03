@@ -174,7 +174,7 @@ static void * detector_callback(void *user_context,
 	/* A full syncfame(), verified ass accurate, forward this to the MUX for PES encapsulation. */
 	obe_coded_frame_t *cf = new_coded_frame(encoder->output_stream_id, payload_byteCount);
 	if (!cf) {
-		syslog(LOG_ERR, "ac3encoder: Malloc failed\n");
+		syslog(LOG_ERR, "[AC3] ac3encoder: Malloc failed\n");
 		return 0;
 	}
 
@@ -272,7 +272,7 @@ static void *start_encoder_ac3bitstream(void *ptr)
 			channels * (depth / 8),
 			span);
 		if (l <= 0) {
-			syslog(LOG_ERR, "AC3Bitstream write() failed\n");
+			syslog(LOG_ERR, "[AC3] AC3Bitstream write() failed\n");
 		}
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H

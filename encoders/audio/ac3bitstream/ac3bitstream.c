@@ -86,6 +86,7 @@ static uint16_t crc_calc(const uint16_t *words, uint32_t wordCount)
 	return crc; 
 }
 
+/* Endian swap an entire buffer of words */
 static void swap_buffer_16b(uint8_t *buf, int numberWords)
 {
         for (int j = 0; j < (numberWords * 2); j += 2) {
@@ -96,7 +97,7 @@ static void swap_buffer_16b(uint8_t *buf, int numberWords)
         }
 }
 
-/* Check the AC3 frame structure, if its broken report to console. */
+/* Check the AC3 frame checksums, if they're broken report to console. */
 static int validateCRC(uint8_t *buf, uint32_t buflen)
 {
 	int ret = 1; /* Success */

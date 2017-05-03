@@ -24,13 +24,15 @@
 #include "common/common.h"
 #include "encoders/audio/audio.h"
 #include "input/sdi/smpte337_detector.h"
-#include "hexdump.h"
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 #include <libklmonitoring/klmonitoring.h>
 #endif
 
 #define LOCAL_DEBUG 0
+#if LOCAL_DEBUG
+#include "hexdump.h"
+#endif
 
 static int64_t cur_pts = -1;
 
@@ -113,7 +115,6 @@ static int validateCRC(uint8_t *buf, uint32_t buflen)
 	uint16_t crc2 = crc_calc(((const uint16_t *)buf) + 1, framesize - 1);
 	if (crc2 != 0) {
 		fprintf(stdout, "[AC3] CRC2 failure, dropping frame, framesize = %d, framesize58 = %d.\n", framesize, framesize58);
-		//hexdump(buf, buflen, 32);
 		ret = 0;
 	}
 

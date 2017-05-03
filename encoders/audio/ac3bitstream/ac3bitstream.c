@@ -197,6 +197,7 @@ static void *start_encoder_ac3bitstream(void *ptr)
 	printf("%s()\n", __func__);
 #endif
 
+	/* We need a bitstream SMPTE337 slicer to do our bidding.... */
         struct smpte337_detector_s *smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback, ptr);
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
@@ -231,20 +232,12 @@ static void *start_encoder_ac3bitstream(void *ptr)
 		obe_raw_frame_t *frm = encoder->queue.queue[0];
 		pthread_mutex_unlock(&encoder->queue.mutex);
 
-		if (stream->channel_layout == AV_CH_LAYOUT_STEREO) {
-			/* TODO: Do something so the muxer knows to change the PMT descriptor? */
-		}
-
 		/* Cache the latest PTS */
 		cur_pts = frm->pts;
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 		kl_histogram_sample_begin(&audio_passthrough);
 #endif
-		/* frm->audio_frame.linesize
-		 * frm->audio_frame.num_samples
-		 * frm->audio_frame.audio_data
-		 */
 
 #if LOCAL_DEBUG
 		/* Send any audio to the AC3 frame slicer.

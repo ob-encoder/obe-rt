@@ -235,10 +235,6 @@ static void *start_encoder_ac3bitstream(void *ptr)
 		/* Cache the latest PTS */
 		cur_pts = frm->pts;
 
-#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
-		kl_histogram_sample_begin(&audio_passthrough);
-#endif
-
 #if LOCAL_DEBUG
 		/* Send any audio to the AC3 frame slicer.
 		 * Push the buffer starting at the channel containing bitstream, and span 2 channels,
@@ -261,6 +257,9 @@ static void *start_encoder_ac3bitstream(void *ptr)
 		/* Fixed at 32b, as the decklink cards are hardcoded for 32. */
 		int depth = 32; /* 32 bit samples, data in LSB 16 bits */
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+		kl_histogram_sample_begin(&audio_passthrough);
+#endif
 		size_t l = smpte337_detector_write(smpte337_detector, (uint8_t *)frm->audio_frame.audio_data[0],
 			frm->audio_frame.num_samples,
 			depth,
@@ -270,7 +269,6 @@ static void *start_encoder_ac3bitstream(void *ptr)
 		if (l <= 0) {
 			syslog(LOG_ERR, "[AC3] AC3Bitstream write() failed\n");
 		}
-
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 		kl_histogram_sample_complete(&audio_passthrough);
 		if (histogram_dump++ > 240) {

@@ -34,8 +34,6 @@
 
 static int64_t cur_pts = -1;
 
-static struct smpte337_detector_s *smpte337_detector = NULL;
-
 /* Polynomial table for AC3/AC5 checksums 16+15+1+1 */
 static const uint16_t crc_tab[] =
 {
@@ -215,8 +213,7 @@ static void *start_encoder_ac3bitstream(void *ptr)
 	printf("%s()\n", __func__);
 #endif
 
-        //struct smpte337_detector_s *smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback, ptr);
-        smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback, ptr);
+        struct smpte337_detector_s *smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback, ptr);
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 	struct kl_histogram audio_passthrough;

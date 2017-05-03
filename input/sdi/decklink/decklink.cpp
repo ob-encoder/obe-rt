@@ -639,13 +639,11 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 #if WRITE_OSD_VALUE
 	static uint32_t xxx = 0;
 	V210_write_32bit_value(frame_bytes, stride, xxx++, 100);
-	//printf("value = 0x%08x\n", V210_read_32bit_value(frame_bytes, stride, 100));
 #endif
 #if READ_OSD_VALUE
 	{
 		static uint32_t xxx = 0;
 		uint32_t val = V210_read_32bit_value(frame_bytes, stride, 210);
-		//printf("value = 0x%08x\n", val);
 		if (xxx + 1 != val) {
                         char t[160];
                         time_t now = time(0);
@@ -855,13 +853,8 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                     raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
             }
 
-#if 0
-            add_to_encode_queue(h, raw_frame, 0);
-#else
-
             if( add_to_filter_queue( h, raw_frame ) < 0 )
                 goto fail;
-#endif
 
             if( send_vbi_and_ttx( h, &decklink_ctx->non_display_parser, raw_frame->pts ) < 0 )
                 goto fail;
@@ -870,8 +863,6 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             decklink_ctx->non_display_parser.num_anc_vbi = 0;
         }
     } /* if video frame */
-
-    /* TODO: probe SMPTE 337M audio */
 
     if (audioframe) {
         if(OPTION_ENABLED_(bitstream_audio)) {
@@ -892,28 +883,6 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             }
         }
     }
-
-#if 0
-    if(audioframe) {
-        static int fcnt = 0;
-        char fn[64];
-        sprintf(fn, "/tmp/input%08d.bin", fcnt++);
-        FILE *fh = fopen(fn, "wb");
-        if (fh) {
-        	audioframe->GetBytes( &frame_bytes );
-		int len = audioframe->GetSampleFrameCount() * decklink_opts_->num_channels * (32 / 8);
-                fwrite(frame_bytes, 1, len, fh);
-                fclose(fh);
-        }
-
-        if (fcnt >= 100) {
-                sprintf(fn, "/tmp/input%08d.bin", fcnt - 100);
-                unlink(fn);
-        }
-
-//printf("ac3 fcnt = %d\n", fcnt);
-	}
-#endif
 
     if( audioframe && !decklink_opts_->probe )
     {
@@ -1019,13 +988,6 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             raw_frame->audio_frame.audio_data[0] = (uint8_t *)malloc(l);
             raw_frame->audio_frame.linesize = raw_frame->audio_frame.num_channels * (32 / 8);
 
-#if 0
-printf("raw_frame->audio_frame.num_samples = %d\n", raw_frame->audio_frame.num_samples);
-printf("raw_frame->audio_frame.sample_fmt = %d\n", raw_frame->audio_frame.sample_fmt);
-printf("raw_frame->audio_frame.linesize = %d\n", raw_frame->audio_frame.linesize);
-printf("decklink_opts_->num_channels = %d\n", decklink_opts_->num_channels);
-printf("l = %d\n", l);
-#endif
             memcpy(raw_frame->audio_frame.audio_data[0], frame_bytes, l);
 
             raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_NONE;
@@ -1068,9 +1030,7 @@ static void close_card( decklink_opts_t *decklink_opts )
 {
     decklink_ctx_t *decklink_ctx = &decklink_opts->decklink_ctx;
 
-printf("%s()\n", __func__);
     if (decklink_ctx->vanchdl) {
-printf("%s() closing vanc\n", __func__);
         vanc_context_destroy(decklink_ctx->vanchdl);
         decklink_ctx->vanchdl = 0;
     }
@@ -1248,12 +1208,6 @@ static int cb_SCTE_104(void *callback_context, struct vanc_context_s *ctx, struc
 			t[ strlen(t) - 1] = 0;
 			syslog(LOG_INFO, "[decklink] SCTE104 frames present");
 			fprintf(stdout, "[decklink] SCTE104 frames present  @ %s", t);
-#if 0
-			int dlen = pkt->hdr.rawLengthWords;
-			//dlen = 512;
-			for (int i = 0; i < dlen; i++)
-				printf("%04x ", pkt->hdr.raw[i]);
-#endif
 			printf("\n");
 			fflush(stdout);
 
@@ -1335,7 +1289,7 @@ static void * detector_callback(void *user_context,
 	if (datatype == 1 /* AC3 */) {
 		decklink_ctx->smpte337_detected_ac3 = 1;
 	} else
-		fprintf(stderr, "[BITSTREAM DETECTOR] Detected datamode %d, we don't support it.",
+		fprintf(stderr, "[decklink] Detected datamode %d, we don't support it.",
 			datamode);
 
         return 0;
@@ -1753,9 +1707,6 @@ static void *probe_stream( void *ptr )
         goto finish;
     }
 
-    /* TODO: probe for SMPTE 337M */
-    /* TODO: factor some of the code below out */
-
     for( int i = 0; i < 2; i++ )
     {
         streams[i] = (obe_int_input_stream_t*)calloc( 1, sizeof(*streams[i]) );
@@ -1813,8 +1764,13 @@ static void *probe_stream( void *ptr )
 
         streams[cur_stream]->stream_type = STREAM_TYPE_AUDIO;
         streams[cur_stream]->stream_format = AUDIO_AC_3_BITSTREAM;
-        streams[cur_stream]->sample_rate = 48000; /* TODO Probe this */
-        streams[cur_stream]->bitrate = 384; /* TODO Probe this */
+
+	/* In reality, the muxer inspects the bistream for these details before constructing a descriptor.
+	 * We expose it here show the probe message on the console are a little more reasonable.
+	 * TODO: Fill out sample_rate and bitrate from the SMPTE337 detector.
+	 */
+        streams[cur_stream]->sample_rate = 48000;
+        streams[cur_stream]->bitrate = 384;
         streams[cur_stream]->pid = 0x124; /* TODO: hardcoded PID not currently used. */
         if(add_non_display_services(non_display_parser, streams[cur_stream], USER_DATA_LOCATION_DVB_STREAM) < 0 )
             goto finish;

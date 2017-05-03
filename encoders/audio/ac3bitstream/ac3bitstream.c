@@ -250,11 +250,13 @@ static void *start_encoder_ac3bitstream(void *ptr)
 #endif
 
 		/* Channel span is always two according to the spec. We've written the code so it can vary. */
-		/* TODO: Channels = 16, will this be valid for original descklink cards with 8 channels? */
-		int span = 2;
-		int channels = 16; /* span from group 0 */
+		int span = 2; /* span from group 1 audio channels 1/2 */
+		int channels = 16; /* TODO: Channels = 16, will this be valid for original decklink cards with 8 channels? */
 
 		/* Fixed at 32b, as the decklink cards are hardcoded for 32. */
+		/* TODO: OBE only runs in the32bit audio mode. If we switch to 16bit mode (probably never),
+		 * then this will need to be adjusted.
+		 */
 		int depth = 32; /* 32 bit samples, data in LSB 16 bits */
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H

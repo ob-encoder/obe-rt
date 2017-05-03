@@ -19,10 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-/* A tool to take PCM bitstreams from blackmagic cards, and reconstruct AC3 syncframes() blobs.
- * When a full synframe has been detected, trigger a callback with a properly aligned frame.
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -52,16 +48,13 @@ void smpte337_detector_free(struct smpte337_detector_s *ctx)
 	free(ctx);
 }
 
-/* For the existing ringbuffer, figure out whether its
- * contents are valid (check crcs), and pass a byte stream
- * to the caller.
- */
 static void handleCallback(struct smpte337_detector_s *ctx, uint8_t datamode, uint8_t datatype,
 	uint32_t payload_bitCount, uint8_t *payload)
 {
 	ctx->cb(ctx->cbContext, ctx, datamode, datatype, payload_bitCount, payload);
 }
 
+/* 16b mode is largely untested, fair wanring. */
 static size_t smpte337_detector_write_16b(struct smpte337_detector_s *ctx, uint8_t *buf,
 	uint32_t audioFrames, uint32_t sampleDepth, uint32_t channelsPerFrame,
 	uint32_t frameStrideBytes,
@@ -69,15 +62,12 @@ static size_t smpte337_detector_write_16b(struct smpte337_detector_s *ctx, uint8
 {
 	size_t consumed = 0;
 
-	//printf("Writing %d frames, span = %d\n", audioFrames, spanCount);
 	uint16_t *p = (uint16_t *)buf;
 	for (int i = 0; i < audioFrames; i++) {
 
-		//printf("\nf %d -- ", i);
 		uint16_t *q = p;
 		for (int k = 0; k < spanCount; k++) {
 			/* Sample in N words into a byte orientied buffer */
-			//printf("0x%08x ", *q);
 			uint8_t *x = (uint8_t *)q;
 
 			/* Flush the word into the fifo MSB first */
@@ -106,15 +96,12 @@ static size_t smpte337_detector_write_32b(struct smpte337_detector_s *ctx, uint8
 {
 	size_t consumed = 0;
 
-	//printf("%s() Writing %d frames, span = %d, sampleDepth = %d\n", __func__, audioFrames, spanCount, sampleDepth);
 	uint32_t *p = (uint32_t *)buf;
 	for (int i = 0; i < audioFrames; i++) {
 
-		//printf("\nf %d -- ", i);
 		uint32_t *q = p;
 		for (int k = 0; k < spanCount; k++) {
 			/* Sample in N words into a byte orientied buffer */
-			//printf("0x%08x ", *q);
 			uint8_t *x = (uint8_t *)q;
 
 			/* Flush the word into the fifo MSB first */
@@ -128,7 +115,6 @@ static size_t smpte337_detector_write_32b(struct smpte337_detector_s *ctx, uint8
 				fprintf(stderr, "overflow occured.\n");
 			}
 			q++;
-
 			consumed += 2;
 		}
 
@@ -149,11 +135,8 @@ static void run_detector(struct smpte337_detector_s *ctx)
 
 		if (rb_peek(ctx->rb, (char *)&dat[0], PEEK_LEN) < PEEK_LEN)
 			break;
-#if 0
-		printf("%02x %02x %02x %02x\n",
-			dat[0], dat[1], dat[2], dat[3]);
-#endif
-		/* Find the supported patterns */
+
+		/* Find the supported patterns - In this case, AC3 only in 16bit mode */
 		if (dat[0] == 0xF8 && dat[1] == 0x72 && dat[2] == 0x4e && dat[3] == 0x1f) {
 			/* pa = 16bit, pb = 16bit */
 			if ((dat[5] & 0x1f) == 0x01) {
@@ -167,17 +150,18 @@ static void run_detector(struct smpte337_detector_s *ctx)
 					char *payload = NULL;
 					size_t l = rb_read_alloc(ctx->rb, &payload, 8 + payload_byteCount);
 					if (l != (8 + payload_byteCount)) {
-						fprintf(stderr, "smpte337_detector: warning, rb read failure.\n");
+						fprintf(stderr, "[smpte337_detector] Warning, rb read failure.\n");
 
 						/* Intensionally flush the ring and start acquisition again. */
 						rb_empty(ctx->rb);
 					} else {
-						handleCallback(ctx, (dat[5] >> 5) & 0x03, dat[5] & 0x1f, payload_bitCount, (uint8_t *)payload + 8);
+						handleCallback(ctx, (dat[5] >> 5) & 0x03, dat[5] & 0x1f,
+							payload_bitCount, (uint8_t *)payload + 8);
 					}
 					if (payload)
 						free(payload);
 				} else {
-					/* Not enough in the ring buffer, come back next time. */
+					/* Not enough data in the ring buffer, come back next time. */
 					break;
 				}
 
@@ -189,21 +173,7 @@ static void run_detector(struct smpte337_detector_s *ctx)
 			rb_discard(ctx->rb, 1); /* Pop a byte, and continue the search */
 			skipped++;
 		}
-#if 0
-		else
-		if (dat[0] == 0x96 && dat[1] == 0xF8 && dat[2] == 0x72 &&
-			dat[3] == 0xa5 && dat[4] == 0x4e && dat[5] == 0x1f) {
-			/* pa = 24bit, pb = 24bit */
-			if ((dat[8] & 0x1f) == 0x41) {
-				/* Bits 0-4 datatype, 1 = AC3 */
-				/* Bits 5-6 datamode, 2 = 24bit */
-				/* Bits   7 errorflg, 0 = no error */
-				handleCallback();
-				break;
-			}
-		}
-#endif
-		
+
 	} /* while */
 }
 
@@ -230,6 +200,5 @@ size_t smpte337_detector_write(struct smpte337_detector_s *ctx, uint8_t *buf,
 	/* Now all the fifo contains byte stream re-ordered data, run the detector. */
 	run_detector(ctx);
 
-//	printf("%s() wrote %d bytes to ring, ring used %d unused %d\n", __func__, ret, rb_used(ctx->rb), rb_unused(ctx->rb));
 	return ret;
 }

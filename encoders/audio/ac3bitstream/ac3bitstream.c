@@ -136,10 +136,10 @@ static void * detector_callback(void *user_context,
 	uint32_t payload_byteCount = payload_bitCount / 8;
 
 #if LOCAL_DEBUG
-	printf("ac3encoder:%s(%d) --\n", __func__, payload_byteCount);
+	printf("[AC3] ac3encoder:%s(%d) --\n", __func__, payload_byteCount);
 	hexdump(payload, 32, 32);
 
-        printf("ac3encoder:%s() datamode = %d [%sbit], datatype = %d [payload: %s]"
+        printf("[AC3] ac3encoder:%s() datamode = %d [%sbit], datatype = %d [payload: %s]"
                 ", payload_bitcount = %d, payload = %p\n",
                 __func__,
                 datamode,
@@ -153,7 +153,7 @@ static void * detector_callback(void *user_context,
 #endif
 
         if (datatype != 1 /* AC3 */) {
-                fprintf(stderr, "[BITSTREAM DETECTOR] Detected datamode %d, we don't support it.", datamode);
+                fprintf(stderr, "[AC3] Detected SMPTE337 datamode %d, we don't support it.", datamode);
 		return 0;
 	}
 

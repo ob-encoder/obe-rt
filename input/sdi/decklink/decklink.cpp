@@ -217,11 +217,6 @@ typedef struct
        see section 2.4.15 of the blackmagic decklink sdk documentation. */
     IDeckLinkConfiguration *p_config;
 
-#if 0
-    int      probe_buf_len;
-    int32_t  *audio_probe_buf;
-#endif
-
     /* Video */
     AVCodec         *dec;
     AVCodecContext  *codec;

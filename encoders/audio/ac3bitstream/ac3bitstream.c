@@ -36,7 +36,7 @@
 
 static int64_t cur_pts = -1;
 
-/* Polynomial table for AC3/AC5 checksums 16+15+1+1 */
+/* Polynomial table for AC3/A52 checksums 16+15+1+1 */
 static const uint16_t crc_tab[] =
 {
 	0x0000, 0x8005, 0x800F, 0x000A, 0x801B, 0x001E, 0x0014, 0x8011,

@@ -198,14 +198,8 @@ __inline__ uint32_t V210_read_32bit_value(void *frame_bytes, uint32_t stride, ui
 		bits <<= 1;
 
 		/* Sample the pixel.... Compressor will decimate, we'll need a luma threshold for production. */
-		//printf("%08x %08x %08x %08x\n", addr[0], addr[1], addr[2], addr[3]);
-#if 1
 		if ((addr[1] & 0x3ff) > 0x080)
 			bits |= 1;
-#else
-		if (addr[1] == white[1])
-			bits |= 1;
-#endif
 	}
 	return bits;
 }

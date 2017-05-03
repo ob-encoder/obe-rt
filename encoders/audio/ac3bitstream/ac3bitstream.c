@@ -163,26 +163,6 @@ static void * detector_callback(void *user_context,
 	 */
 	swap_buffer_16b(payload, payload_byteCount / 2);
 	if (validateCRC(payload, payload_byteCount) != 1) {
-#if 0
-		/* Validate failed. */
-		swap_buffer_16b(payload, payload_byteCount / 2);
-		static int fcnt = 0;
-		char fn[64];
-		sprintf(fn, "/tmp/crc%08d.bin", fcnt++);
-		FILE *fh = fopen(fn, "wb");
-		if (fh) {
-			fwrite(payload, 1, payload_byteCount, fh);
-			fclose(fh);
-		}
-		printf("crc fcnt = %d\n", fcnt);
-		fh = fopen("/tmp/ringbuffer.bin", "wb");
-		if (fh) {
-       			rb_fwrite(smpte337_detector->rb, fh);
-			fclose(fh);
-		}
-		printf("Dumped CRC to tmp for inspection.\n");
-		exit(0);
-#endif
 		return 0;
 	}
 
@@ -284,23 +264,6 @@ static void *start_encoder_ac3bitstream(void *ptr)
 		/* Fixed at 32b, as the decklink cards are hardcoded for 32. */
 		int depth = 32; /* 32 bit samples, data in LSB 16 bits */
 
-#if 0
-		static int fcnt = 0;
-		char fn[64];
-		sprintf(fn, "/tmp/write%08d.bin", fcnt++);
-		FILE *fh = fopen(fn, "wb");
-		if (fh) {
-			fwrite((uint8_t *)frm->audio_frame.audio_data[0], 1, frm->audio_frame.num_samples * channels * (depth / 8), fh);
-			fclose(fh);
-		}
-
-		if (fcnt >= 100) {
-			sprintf(fn, "/tmp/write%08d.bin", fcnt - 100);
-			unlink(fn);
-		}
-
-		//printf("ac3 fcnt = %d\n", fcnt);
-#endif
 		size_t l = smpte337_detector_write(smpte337_detector, (uint8_t *)frm->audio_frame.audio_data[0],
 			frm->audio_frame.num_samples,
 			depth,

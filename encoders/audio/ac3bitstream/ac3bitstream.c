@@ -1,5 +1,8 @@
 /*****************************************************************************
- * ac3bitstream.c : AC3/A52 compressed bitstream passthrough
+ * ac3bitstream.c : AC3/A52 compressed bitstream passthrough.
+ * Use a SMPTE337 slicer to extract bitstream payload from an audio channel.
+ * Analyze that audio, if we detect AC3 then forward it to the MUX, else
+ * discard it.
  *****************************************************************************
  * Copyright (C) 2017 Kernel Labs Inc.
  *

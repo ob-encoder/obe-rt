@@ -207,7 +207,6 @@ static void *start_encoder_ac3bitstream(void *ptr)
 #endif
 	obe_aud_enc_params_t *enc_params = ptr;
 	obe_encoder_t *encoder = enc_params->encoder;
-	obe_output_stream_t *stream = enc_params->stream;
 
 	/* Lock the mutex until we verify parameters */
 	pthread_mutex_lock(&encoder->queue.mutex);

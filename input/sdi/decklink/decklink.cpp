@@ -1348,7 +1348,8 @@ static int open_card( decklink_opts_t *decklink_opts )
     if (OPTION_ENABLED(bitstream_audio)) {
         decklink_ctx->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback,
             decklink_ctx);
-    }
+    } else
+        decklink_ctx->smpte337_frames_written = 256;
 
 #if 1
 #pragma message "SCTE104 verbose debugging enabled."

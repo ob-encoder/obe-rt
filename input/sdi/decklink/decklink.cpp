@@ -868,21 +868,29 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     if (audioframe) {
         if(OPTION_ENABLED_(bitstream_audio)) {
-            audioframe->GetBytes(&frame_bytes);
+            for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
+                audioframe->GetBytes(&frame_bytes);
 
-            /* Look for bitstream in audio channels 0 and 1 */
-            /* TODO: Examine other channels. */
-            /* TODO: Kinda pointless caching a successful find, because those
-             * values held in decklink_ctx are thrown away when the probe completes. */
-            struct audio_pair_s *pair = &decklink_ctx->audio_pairs[0];
-            if (pair->smpte337_detector) {
-                pair->smpte337_frames_written++;
-                smpte337_detector_write(pair->smpte337_detector, (uint8_t *)frame_bytes,
-                    audioframe->GetSampleFrameCount(),
-                    32,
-                    decklink_opts_->num_channels,
-                    decklink_opts_->num_channels * (32 / 8),
-                    2);
+                /* Look for bitstream in audio channels 0 and 1 */
+                /* TODO: Examine other channels. */
+                /* TODO: Kinda pointless caching a successful find, because those
+                 * values held in decklink_ctx are thrown away when the probe completes. */
+                int depth = 32;
+                int span = 2;
+                struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
+                if (pair->smpte337_detector) {
+                    pair->smpte337_frames_written++;
+
+                    /* Figure out the offset in the line, where this channel pair begins. */
+                    int offset = i * ((depth / 8) * span);
+                    smpte337_detector_write(pair->smpte337_detector, (uint8_t *)frame_bytes + offset,
+                        audioframe->GetSampleFrameCount(),
+                        depth,
+                        decklink_opts_->num_channels,
+                        decklink_opts_->num_channels * (depth / 8),
+                        span);
+
+                }
             }
         }
     }
@@ -977,34 +985,38 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                 raw_frame->release_frame(raw_frame);
         }
 
-        if(decklink_ctx->audio_pairs[0].smpte337_detected_ac3)
-        { /* TODO: Compressed Audio - Process each AC3 stream detected.... and create a 
-           * frame for each distinct output PES we want.
-           */
+        for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
+            struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
+            if(pair->smpte337_detected_ac3)
+            {
+                int depth = 32;
+                int span = 2;
+                int offset = i * ((depth / 8) * span);
+                raw_frame = new_raw_frame();
+                raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
+                raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
+                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P; /* No specific format. The audio filter will play passthrough. */
 
-            raw_frame = new_raw_frame();
-            raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
-            raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
-            raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P; /* No specific format. The audio filter will play passthrough. */
+                int l = audioframe->GetSampleFrameCount() * decklink_opts_->num_channels * (depth / 8);
+                raw_frame->audio_frame.audio_data[0] = (uint8_t *)malloc(l);
+                raw_frame->audio_frame.linesize = raw_frame->audio_frame.num_channels * (depth / 8);
 
-            int l = audioframe->GetSampleFrameCount() * decklink_opts_->num_channels * (32 / 8);
-            raw_frame->audio_frame.audio_data[0] = (uint8_t *)malloc(l);
-            raw_frame->audio_frame.linesize = raw_frame->audio_frame.num_channels * (32 / 8);
+// MMM
+                memcpy(raw_frame->audio_frame.audio_data[0], (uint8_t *)frame_bytes + offset, l - offset);
 
-            memcpy(raw_frame->audio_frame.audio_data[0], frame_bytes, l);
+                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_NONE;
 
-            raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_NONE;
-
-            raw_frame->pts = packet_time;
-            raw_frame->release_data = obe_release_audio_data;
-            raw_frame->release_frame = obe_release_frame;
-            for (int i = 0; i < decklink_ctx->device->num_input_streams; i++) {
-                if( decklink_ctx->device->streams[i]->stream_format == AUDIO_AC_3_BITSTREAM) {
-                    raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
-                    break;
+                raw_frame->pts = packet_time;
+                raw_frame->release_data = obe_release_audio_data;
+                raw_frame->release_frame = obe_release_frame;
+                for (int i = 0; i < decklink_ctx->device->num_input_streams; i++) {
+                    if( decklink_ctx->device->streams[i]->stream_format == AUDIO_AC_3_BITSTREAM) {
+                        raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
+                        break;
+                    }
                 }
+                add_to_filter_queue(decklink_ctx->h, raw_frame);
             }
-            add_to_filter_queue(decklink_ctx->h, raw_frame);
         }
     }
 

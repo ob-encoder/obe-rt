@@ -261,7 +261,7 @@ typedef struct
 #if KL_PRBS_INPUT
     struct prbs_context_s prbs;
 #endif
-#define MAX_AUDIO_PAIRS 4
+#define MAX_AUDIO_PAIRS 8
     struct audio_pair_s audio_pairs[MAX_AUDIO_PAIRS];
 } decklink_ctx_t;
 

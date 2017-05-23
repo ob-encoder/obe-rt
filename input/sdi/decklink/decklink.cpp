@@ -207,6 +207,14 @@ __inline__ uint32_t V210_read_32bit_value(void *frame_bytes, uint32_t stride, ui
 
 class DeckLinkCaptureDelegate;
 
+struct audio_pair_s {
+    int    nr; /* 0 - 7 */
+    struct smpte337_detector_s *smpte337_detector;
+    int    smpte337_detected_ac3;
+    int    smpte337_frames_written;
+    void  *decklink_ctx;
+};
+
 typedef struct
 {
     IDeckLink *p_card;
@@ -252,19 +260,8 @@ typedef struct
 #if KL_PRBS_INPUT
     struct prbs_context_s prbs;
 #endif
-/* TODO: We need to support bitstream on any of the 8 audio pairs.
- * Todoy we support it on pair 1 only.
- */
-    struct smpte337_detector_s *smpte337_detector;
-
-    /* Have we detected bitstream AC3 on any audio channels 0-15?
-     * [0] true if detected on pair 0/1
-     * [1] true if detected on pair 2/3
-     * ...
-     * [7] true if detected on pair 14/15
-     */
-    int smpte337_detected_ac3[8];
-    int smpte337_frames_written[8];
+#define MAX_AUDIO_PAIRS 1
+    struct audio_pair_s audio_pairs[MAX_AUDIO_PAIRS];
 } decklink_ctx_t;
 
 typedef struct
@@ -611,7 +608,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             syslog( LOG_ERR, "Decklink card index %i: No input signal detected", decklink_opts_->card_idx );
             return S_OK;
         }
-        else if (decklink_opts_->probe && decklink_ctx->smpte337_frames_written[0] > 6)
+        else if (decklink_opts_->probe && decklink_ctx->audio_pairs[0].smpte337_frames_written > 6)
             decklink_opts_->probe_success = 1;
 
         /* use SDI ticks as clock source */
@@ -877,9 +874,10 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             /* TODO: Examine other channels. */
             /* TODO: Kinda pointless caching a successful find, because those
              * values held in decklink_ctx are thrown away when the probe completes. */
-            if (decklink_ctx->smpte337_detector) {
-                decklink_ctx->smpte337_frames_written[0]++;
-                smpte337_detector_write(decklink_ctx->smpte337_detector, (uint8_t *)frame_bytes,
+            struct audio_pair_s *pair = &decklink_ctx->audio_pairs[0];
+            if (pair->smpte337_detector) {
+                pair->smpte337_frames_written++;
+                smpte337_detector_write(pair->smpte337_detector, (uint8_t *)frame_bytes,
                     audioframe->GetSampleFrameCount(),
                     32,
                     decklink_opts_->num_channels,
@@ -968,7 +966,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                 raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
         }
 
-        if(!decklink_ctx->smpte337_detected_ac3[0]) {
+        if(!decklink_ctx->audio_pairs[0].smpte337_detected_ac3) {
             if( add_to_filter_queue( decklink_ctx->h, raw_frame ) < 0 )
                 goto fail;
         } else {
@@ -979,7 +977,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                 raw_frame->release_frame(raw_frame);
         }
 
-        if(decklink_ctx->smpte337_detected_ac3[0])
+        if(decklink_ctx->audio_pairs[0].smpte337_detected_ac3)
         { /* TODO: Compressed Audio - Process each AC3 stream detected.... and create a 
            * frame for each distinct output PES we want.
            */
@@ -1045,9 +1043,12 @@ static void close_card( decklink_opts_t *decklink_opts )
         decklink_ctx->smpte2038_ctx = 0;
     }
 
-    if (decklink_ctx->smpte337_detector) {
-        smpte337_detector_free(decklink_ctx->smpte337_detector);
-        decklink_ctx->smpte337_detector = 0;
+    for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
+        struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
+        if (pair->smpte337_detector) {
+            smpte337_detector_free(pair->smpte337_detector);
+            pair->smpte337_detector = 0;
+        }
     }
 
     if( decklink_ctx->p_config )
@@ -1276,8 +1277,9 @@ static void * detector_callback(void *user_context,
         struct smpte337_detector_s *ctx,
         uint8_t datamode, uint8_t datatype, uint32_t payload_bitCount, uint8_t *payload)
 {
-	decklink_ctx_t *decklink_ctx = (decklink_ctx_t *)user_context;
+	struct audio_pair_s *pair = (struct audio_pair_s *)user_context;
 #if 0
+	decklink_ctx_t *decklink_ctx = pair->decklink_ctx;
         printf("%s() datamode = %d [%sbit], datatype = %d [payload: %s]"
                 ", payload_bitcount = %d, payload = %p\n",
                 __func__,
@@ -1292,9 +1294,10 @@ static void * detector_callback(void *user_context,
 #endif
 
 	if (datatype == 1 /* AC3 */) {
-		decklink_ctx->smpte337_detected_ac3[0] = 1;
+		pair->smpte337_detected_ac3 = 1;
 	} else
-		fprintf(stderr, "[decklink] Detected datamode %d, we don't support it.",
+		fprintf(stderr, "[decklink] Detected datamode %d on pair %d, we don't support it.",
+			pair->nr,
 			datamode);
 
         return 0;
@@ -1349,12 +1352,18 @@ static int open_card( decklink_opts_t *decklink_opts )
     } else
 	callbacks.all = NULL;
 
-    decklink_ctx->smpte337_detected_ac3[0] = 0;
-    if (OPTION_ENABLED(bitstream_audio)) {
-        decklink_ctx->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback,
-            decklink_ctx);
-    } else
-        decklink_ctx->smpte337_frames_written[0] = 256;
+    for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
+        struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
+
+        pair->nr = i;
+        pair->smpte337_detected_ac3 = 0;
+
+        if (OPTION_ENABLED(bitstream_audio)) {
+            pair->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback, pair);
+        } else {
+            pair->smpte337_frames_written = 256;
+        }
+    }
 
 #if 1
 #pragma message "SCTE104 verbose debugging enabled."
@@ -1742,7 +1751,7 @@ static void *probe_stream( void *ptr )
 
             cur_stream++;
         }
-        else if(i == 1 && !decklink_ctx->smpte337_detected_ac3[0])
+        else if(i == 1 && !decklink_ctx->audio_pairs[0].smpte337_detected_ac3)
         {
             pthread_mutex_lock( &h->device_list_mutex );
             streams[i]->input_stream_id = h->cur_input_stream_id++;
@@ -1758,7 +1767,7 @@ static void *probe_stream( void *ptr )
     }
 
     /* Add a new output stream type, bitstream audio. */
-    if (decklink_ctx->smpte337_detected_ac3[0])
+    if (decklink_ctx->audio_pairs[0].smpte337_detected_ac3)
     {
         streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
         if (!streams[cur_stream])

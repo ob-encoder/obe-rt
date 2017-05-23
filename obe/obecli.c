@@ -1270,17 +1270,18 @@ static int show_input_streams( char *command, obecli_command_t *child )
             }
         }
         else if (stream->stream_type == STREAM_TYPE_AUDIO && stream->stream_format == AUDIO_AC_3_BITSTREAM) {
-            printf( "Input-stream-id: %d - Audio: %s digital bitstream\n", stream->input_stream_id, format_name);
+            printf( "Input-stream-id: %d - Audio: %s digital bitstream - SDI audio pair: %d\n", stream->input_stream_id, format_name, stream->sdi_audio_pair);
         }
         else if( stream->stream_type == STREAM_TYPE_AUDIO )
         {
             if( !stream->channel_layout )
-                snprintf( buf, sizeof(buf), "%i channels", stream->num_channels );
+                snprintf( buf, sizeof(buf), "%2i channels", stream->num_channels );
             else
                 av_get_channel_layout_string( buf, sizeof(buf), 0, stream->channel_layout );
-            printf( "Input-stream-id: %d - Audio: %s%s %s %ikHz \n", stream->input_stream_id, format_name,
+            printf( "Input-stream-id: %d - Audio: %s%s %s %ikHz - SDI audio pair: %d\n", stream->input_stream_id, format_name,
                     stream->stream_format == AUDIO_AAC ? stream->aac_is_latm ? " LATM" : " ADTS" : "",
-                    buf, stream->sample_rate / 1000);
+                    buf, stream->sample_rate / 1000,
+                    stream->sdi_audio_pair);
         }
         else if( stream->stream_format == SUBTITLES_DVB )
         {
@@ -1545,7 +1546,7 @@ static int probe_device( char *command, obecli_command_t *child )
             }
             else if( cli.program.streams[i].stream_type == STREAM_TYPE_AUDIO )
             {
-                cli.output_streams[i].sdi_audio_pair = 1;
+                cli.output_streams[i].sdi_audio_pair = cli.program.streams[i].sdi_audio_pair;
                 cli.output_streams[i].channel_layout = AV_CH_LAYOUT_STEREO;
             }
         }

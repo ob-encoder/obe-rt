@@ -213,6 +213,7 @@ struct audio_pair_s {
     int    smpte337_detected_ac3;
     int    smpte337_frames_written;
     void  *decklink_ctx;
+    int    input_stream_id; /* We need this during capture, so we can forward the payload to the right output encoder. */
 };
 
 typedef struct
@@ -260,7 +261,7 @@ typedef struct
 #if KL_PRBS_INPUT
     struct prbs_context_s prbs;
 #endif
-#define MAX_AUDIO_PAIRS 1
+#define MAX_AUDIO_PAIRS 4
     struct audio_pair_s audio_pairs[MAX_AUDIO_PAIRS];
 } decklink_ctx_t;
 
@@ -897,19 +898,23 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     if( audioframe && !decklink_opts_->probe )
     {
-        audioframe->GetBytes( &frame_bytes );
-        raw_frame = new_raw_frame();
-        if( !raw_frame )
-        {
-            syslog( LOG_ERR, "Malloc failed\n" );
-            goto end;
-        }
+        for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
+            struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
 
-        raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
-        raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
-        raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P;
+            if (!pair->smpte337_detected_ac3) {
+                /* PCM audio, forward to compressors */
+                audioframe->GetBytes(&frame_bytes);
+                raw_frame = new_raw_frame();
+                if (!raw_frame) {
+                    syslog(LOG_ERR, "Malloc failed\n");
+                    goto end;
+                }
+
+                raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
+                raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
+                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P;
 #if KL_PRBS_INPUT
-        {
+            {
             uint32_t *p = (uint32_t *)frame_bytes;
             //dumpAudio((uint16_t *)p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels);
 
@@ -946,52 +951,38 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                     }
                 }
             }
-        }
+
+            }
 #endif
 
-        if( av_samples_alloc( raw_frame->audio_frame.audio_data, &raw_frame->audio_frame.linesize, decklink_opts_->num_channels,
+                if( av_samples_alloc( raw_frame->audio_frame.audio_data, &raw_frame->audio_frame.linesize, decklink_opts_->num_channels,
                               raw_frame->audio_frame.num_samples, (AVSampleFormat)raw_frame->audio_frame.sample_fmt, 0 ) < 0 )
-        {
-            syslog( LOG_ERR, "Malloc failed\n" );
-            return -1;
-        }
+                {
+                    syslog( LOG_ERR, "Malloc failed\n" );
+                    return -1;
+                }
 
-        if( avresample_convert( decklink_ctx->avr, raw_frame->audio_frame.audio_data, raw_frame->audio_frame.linesize,
+                if( avresample_convert( decklink_ctx->avr, raw_frame->audio_frame.audio_data, raw_frame->audio_frame.linesize,
                                 raw_frame->audio_frame.num_samples, (uint8_t**)&frame_bytes, 0, raw_frame->audio_frame.num_samples ) < 0 )
-        {
-            syslog( LOG_ERR, "[decklink] Sample format conversion failed\n" );
-            return -1;
-        }
+                {
+                    syslog( LOG_ERR, "[decklink] Sample format conversion failed\n" );
+                    return -1;
+                }
 
-        BMDTimeValue packet_time;
-        audioframe->GetPacketTime( &packet_time, OBE_CLOCK );
-        raw_frame->pts = packet_time;
-        raw_frame->release_data = obe_release_audio_data;
-        raw_frame->release_frame = obe_release_frame;
-        for( int i = 0; i < decklink_ctx->device->num_input_streams; i++ )
-        {
-            if( decklink_ctx->device->streams[i]->stream_format == AUDIO_PCM )
-                raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
-        }
+                BMDTimeValue packet_time;
+                audioframe->GetPacketTime(&packet_time, OBE_CLOCK);
+                raw_frame->pts = packet_time;
+                raw_frame->release_data = obe_release_audio_data;
+                raw_frame->release_frame = obe_release_frame;
+                raw_frame->input_stream_id = pair->input_stream_id;
+                if (add_to_filter_queue(decklink_ctx->h, raw_frame) < 0)
+                    goto fail;
 
-        if(!decklink_ctx->audio_pairs[0].smpte337_detected_ac3) {
-            if( add_to_filter_queue( decklink_ctx->h, raw_frame ) < 0 )
-                goto fail;
-        } else {
-                /* TODO: Allocating a frame then throwing it away is a hack.
-                 * This entire function needs completely refactored.
-                 */
-                raw_frame->release_data(raw_frame);
-                raw_frame->release_frame(raw_frame);
-        }
+            } /* !pair->smpte337_detected_ac3 */
+            else
+            { /* if pair->smpte337_detected_ac3) */
 
-        for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
-
-            /* Ship the buffer + offset into it, down to the encoders. The encoders will look at
-             * offset 0. */
-            struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
-            if(pair->smpte337_detected_ac3)
-            {
+                /* Ship the buffer + offset into it, down to the encoders. The encoders will look at offset 0. */
                 int depth = 32;
                 int span = 2;
                 int offset = i * ((depth / 8) * span);
@@ -1004,23 +995,21 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                 raw_frame->audio_frame.audio_data[0] = (uint8_t *)malloc(l);
                 raw_frame->audio_frame.linesize = raw_frame->audio_frame.num_channels * (depth / 8);
 
-// MMM
                 memcpy(raw_frame->audio_frame.audio_data[0], (uint8_t *)frame_bytes + offset, l - offset);
 
                 raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_NONE;
 
+                BMDTimeValue packet_time;
+                audioframe->GetPacketTime(&packet_time, OBE_CLOCK);
                 raw_frame->pts = packet_time;
                 raw_frame->release_data = obe_release_audio_data;
                 raw_frame->release_frame = obe_release_frame;
-                for (int i = 0; i < decklink_ctx->device->num_input_streams; i++) {
-                    if( decklink_ctx->device->streams[i]->stream_format == AUDIO_AC_3_BITSTREAM) {
-                        raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
-                        break;
-                    }
-                }
+                raw_frame->input_stream_id = pair->input_stream_id;
+//printf("frame for pair %d input %d at offset %d\n", pair->nr, raw_frame->input_stream_id, offset);
+
                 add_to_filter_queue(decklink_ctx->h, raw_frame);
             }
-        }
+        } /* For all audio pairs... */
     }
 
 end:
@@ -1373,6 +1362,7 @@ static int open_card( decklink_opts_t *decklink_opts )
         pair->nr = i;
         pair->smpte337_detected_ac3 = 0;
         pair->decklink_ctx = decklink_ctx;
+        pair->input_stream_id = i + 1; /* Video is zero, audio onwards. */
 
         if (OPTION_ENABLED(bitstream_audio)) {
             pair->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback, pair);
@@ -1738,75 +1728,66 @@ static void *probe_stream( void *ptr )
         goto finish;
     }
 
-    for( int i = 0; i < 2; i++ )
-    {
-        streams[i] = (obe_int_input_stream_t*)calloc( 1, sizeof(*streams[i]) );
-        if( !streams[i] )
-            goto finish;
+#define ALLOC_STREAM(nr) \
+    streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream])); \
+    if (!streams[cur_stream]) goto finish;
 
-        /* TODO: make it take a continuous set of stream-ids */
+    ALLOC_STREAM(cur_stream]);
+    pthread_mutex_lock(&h->device_list_mutex);
+    streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
+    pthread_mutex_unlock(&h->device_list_mutex);
 
-        if( i == 0 )
-        {
-            pthread_mutex_lock( &h->device_list_mutex );
-            streams[i]->input_stream_id = h->cur_input_stream_id++;
-            pthread_mutex_unlock( &h->device_list_mutex );
-            streams[i]->stream_type = STREAM_TYPE_VIDEO;
-            streams[i]->stream_format = VIDEO_UNCOMPRESSED;
-            streams[i]->width  = decklink_opts->width;
-            streams[i]->height = decklink_opts->height;
-            streams[i]->timebase_num = decklink_opts->timebase_num;
-            streams[i]->timebase_den = decklink_opts->timebase_den;
-            streams[i]->csp    = PIX_FMT_YUV422P10;
-            streams[i]->interlaced = decklink_opts->interlaced;
-            streams[i]->tff = 1; /* NTSC is bff in baseband but coded as tff */
-            streams[i]->sar_num = streams[i]->sar_den = 1; /* The user can choose this when encoding */
+    streams[cur_stream]->stream_type = STREAM_TYPE_VIDEO;
+    streams[cur_stream]->stream_format = VIDEO_UNCOMPRESSED;
+    streams[cur_stream]->width  = decklink_opts->width;
+    streams[cur_stream]->height = decklink_opts->height;
+    streams[cur_stream]->timebase_num = decklink_opts->timebase_num;
+    streams[cur_stream]->timebase_den = decklink_opts->timebase_den;
+    streams[cur_stream]->csp    = PIX_FMT_YUV422P10;
+    streams[cur_stream]->interlaced = decklink_opts->interlaced;
+    streams[cur_stream]->tff = 1; /* NTSC is bff in baseband but coded as tff */
+    streams[cur_stream]->sar_num = streams[cur_stream]->sar_den = 1; /* The user can choose this when encoding */
 
-            if( add_non_display_services( non_display_parser, streams[i], USER_DATA_LOCATION_FRAME ) < 0 )
-                goto finish;
+    if (add_non_display_services(non_display_parser, streams[cur_stream], USER_DATA_LOCATION_FRAME) < 0)
+        goto finish;
+    cur_stream++;
 
-            cur_stream++;
-        }
-        else if(i == 1 && !decklink_ctx->audio_pairs[0].smpte337_detected_ac3)
-        {
-            pthread_mutex_lock( &h->device_list_mutex );
-            streams[i]->input_stream_id = h->cur_input_stream_id++;
-            pthread_mutex_unlock( &h->device_list_mutex );
-            streams[i]->stream_type = STREAM_TYPE_AUDIO;
-            streams[i]->stream_format = AUDIO_PCM;
-            streams[i]->num_channels  = 16;
-            streams[i]->sample_format = AV_SAMPLE_FMT_S32P;
-            /* TODO: support other sample rates */
-            streams[i]->sample_rate = 48000;
-            cur_stream++;
-        }
-    }
+    for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
+        struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
 
-    /* Add a new output stream type, bitstream audio. */
-    if (decklink_ctx->audio_pairs[0].smpte337_detected_ac3)
-    {
-        streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
-        if (!streams[cur_stream])
-            goto finish;
+        ALLOC_STREAM(cur_stream]);
+        streams[cur_stream]->sdi_audio_pair = i + 1;
 
         pthread_mutex_lock(&h->device_list_mutex);
         streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
         pthread_mutex_unlock(&h->device_list_mutex);
 
-        streams[cur_stream]->stream_type = STREAM_TYPE_AUDIO;
-        streams[cur_stream]->stream_format = AUDIO_AC_3_BITSTREAM;
+// MMM
+        if (!pair->smpte337_detected_ac3)
+        {
+            streams[cur_stream]->stream_type = STREAM_TYPE_AUDIO;
+            streams[cur_stream]->stream_format = AUDIO_PCM;
+            streams[cur_stream]->num_channels  = 2;
+            streams[cur_stream]->sample_format = AV_SAMPLE_FMT_S32P;
+            /* TODO: support other sample rates */
+            streams[cur_stream]->sample_rate = 48000;
+        } else {
 
-	/* In reality, the muxer inspects the bistream for these details before constructing a descriptor.
-	 * We expose it here show the probe message on the console are a little more reasonable.
-	 * TODO: Fill out sample_rate and bitrate from the SMPTE337 detector.
-	 */
-        streams[cur_stream]->sample_rate = 48000;
-        streams[cur_stream]->bitrate = 384;
-        streams[cur_stream]->pid = 0x124; /* TODO: hardcoded PID not currently used. */
-        if(add_non_display_services(non_display_parser, streams[cur_stream], USER_DATA_LOCATION_DVB_STREAM) < 0 )
-            goto finish;
+            streams[cur_stream]->stream_type = STREAM_TYPE_AUDIO;
+            streams[cur_stream]->stream_format = AUDIO_AC_3_BITSTREAM;
+
+            /* In reality, the muxer inspects the bistream for these details before constructing a descriptor.
+             * We expose it here show the probe message on the console are a little more reasonable.
+             * TODO: Fill out sample_rate and bitrate from the SMPTE337 detector.
+             */
+            streams[cur_stream]->sample_rate = 48000;
+            streams[cur_stream]->bitrate = 384;
+            streams[cur_stream]->pid = 0x124; /* TODO: hardcoded PID not currently used. */
+            if (add_non_display_services(non_display_parser, streams[cur_stream], USER_DATA_LOCATION_DVB_STREAM) < 0)
+                goto finish;
+        }
         cur_stream++;
-    }
+    } /* For all audio pairs.... */
 
     /* Add a new output stream type, a TABLE_SECTION mechanism.
      * We use this to pass DVB table sections direct to the muxer,
@@ -1814,9 +1795,7 @@ static void *probe_stream( void *ptr )
      */
     if (OPTION_ENABLED(scte35))
     {
-        streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
-        if (!streams[cur_stream])
-            goto finish;
+        ALLOC_STREAM(cur_stream);
 
         pthread_mutex_lock(&h->device_list_mutex);
         streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
@@ -1835,9 +1814,7 @@ static void *probe_stream( void *ptr )
      */
     if (OPTION_ENABLED(smpte2038))
     {
-        streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
-        if (!streams[cur_stream])
-            goto finish;
+        ALLOC_STREAM(cur_stream);
 
         pthread_mutex_lock(&h->device_list_mutex);
         streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
@@ -1851,12 +1828,9 @@ static void *probe_stream( void *ptr )
         cur_stream++;
     }
 
-
     if( non_display_parser->has_vbi_frame )
     {
-        streams[cur_stream] = (obe_int_input_stream_t*)calloc( 1, sizeof(*streams[cur_stream]) );
-        if( !streams[cur_stream] )
-            goto finish;
+        ALLOC_STREAM(cur_stream);
 
         pthread_mutex_lock( &h->device_list_mutex );
         streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
@@ -1872,9 +1846,7 @@ static void *probe_stream( void *ptr )
 
     if( non_display_parser->has_ttx_frame )
     {
-        streams[cur_stream] = (obe_int_input_stream_t*)calloc( 1, sizeof(*streams[cur_stream]) );
-        if( !streams[cur_stream] )
-            goto finish;
+        ALLOC_STREAM(cur_stream);
 
         pthread_mutex_lock( &h->device_list_mutex );
         streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;

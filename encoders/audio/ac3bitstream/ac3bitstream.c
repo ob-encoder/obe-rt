@@ -207,6 +207,9 @@ static void *start_encoder_ac3bitstream(void *ptr)
 #endif
 	obe_aud_enc_params_t *enc_params = ptr;
 	obe_encoder_t *encoder = enc_params->encoder;
+#if LOCAL_DEBUG
+	printf("%s() output_stream_id = %d, ptr = %p\n", __func__, encoder->output_stream_id, ptr);
+#endif
 
 	/* Lock the mutex until we verify parameters */
 	pthread_mutex_lock(&encoder->queue.mutex);
@@ -239,8 +242,9 @@ static void *start_encoder_ac3bitstream(void *ptr)
 		 * Push the buffer starting at the channel containing bitstream, and span 2 channels,
 		 * we'll get called back with a completely aligned, crc'd and valid AC3 frame.
 		 */
-		printf("%s() linesize = %d, num_samples = %d, num_channels = %d, sample_fmt = %d, raw_frame->input_stream_id = %d\n",
+		printf("%s() output_stream_id = %d linesize = %d, num_samples = %d, num_channels = %d, sample_fmt = %d, raw_frame->input_stream_id = %d\n",
 			__func__,
+			encoder->output_stream_id,
 			frm->audio_frame.linesize,
 			frm->audio_frame.num_samples, frm->audio_frame.num_channels,
 			frm->audio_frame.sample_fmt,

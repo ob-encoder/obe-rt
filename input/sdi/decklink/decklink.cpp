@@ -257,9 +257,14 @@ typedef struct
  */
     struct smpte337_detector_s *smpte337_detector;
 
-    /* Have we detected bitstream AC3 on audio channels 0/1? */
-    int smpte337_detected_ac3;
-    int smpte337_frames_written;
+    /* Have we detected bitstream AC3 on any audio channels 0-15?
+     * [0] true if detected on pair 0/1
+     * [1] true if detected on pair 2/3
+     * ...
+     * [7] true if detected on pair 14/15
+     */
+    int smpte337_detected_ac3[8];
+    int smpte337_frames_written[8];
 } decklink_ctx_t;
 
 typedef struct
@@ -606,7 +611,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             syslog( LOG_ERR, "Decklink card index %i: No input signal detected", decklink_opts_->card_idx );
             return S_OK;
         }
-        else if (decklink_opts_->probe && decklink_ctx->smpte337_frames_written > 6)
+        else if (decklink_opts_->probe && decklink_ctx->smpte337_frames_written[0] > 6)
             decklink_opts_->probe_success = 1;
 
         /* use SDI ticks as clock source */
@@ -873,7 +878,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
             /* TODO: Kinda pointless caching a successful find, because those
              * values held in decklink_ctx are thrown away when the probe completes. */
             if (decklink_ctx->smpte337_detector) {
-                decklink_ctx->smpte337_frames_written++;
+                decklink_ctx->smpte337_frames_written[0]++;
                 smpte337_detector_write(decklink_ctx->smpte337_detector, (uint8_t *)frame_bytes,
                     audioframe->GetSampleFrameCount(),
                     32,
@@ -963,7 +968,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                 raw_frame->input_stream_id = decklink_ctx->device->streams[i]->input_stream_id;
         }
 
-        if(!decklink_ctx->smpte337_detected_ac3) {
+        if(!decklink_ctx->smpte337_detected_ac3[0]) {
             if( add_to_filter_queue( decklink_ctx->h, raw_frame ) < 0 )
                 goto fail;
         } else {
@@ -974,7 +979,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
                 raw_frame->release_frame(raw_frame);
         }
 
-        if(decklink_ctx->smpte337_detected_ac3)
+        if(decklink_ctx->smpte337_detected_ac3[0])
         { /* TODO: Compressed Audio - Process each AC3 stream detected.... and create a 
            * frame for each distinct output PES we want.
            */
@@ -1287,7 +1292,7 @@ static void * detector_callback(void *user_context,
 #endif
 
 	if (datatype == 1 /* AC3 */) {
-		decklink_ctx->smpte337_detected_ac3 = 1;
+		decklink_ctx->smpte337_detected_ac3[0] = 1;
 	} else
 		fprintf(stderr, "[decklink] Detected datamode %d, we don't support it.",
 			datamode);
@@ -1344,12 +1349,12 @@ static int open_card( decklink_opts_t *decklink_opts )
     } else
 	callbacks.all = NULL;
 
-    decklink_ctx->smpte337_detected_ac3 = 0;
+    decklink_ctx->smpte337_detected_ac3[0] = 0;
     if (OPTION_ENABLED(bitstream_audio)) {
         decklink_ctx->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback,
             decklink_ctx);
     } else
-        decklink_ctx->smpte337_frames_written = 256;
+        decklink_ctx->smpte337_frames_written[0] = 256;
 
 #if 1
 #pragma message "SCTE104 verbose debugging enabled."
@@ -1737,7 +1742,7 @@ static void *probe_stream( void *ptr )
 
             cur_stream++;
         }
-        else if(i == 1 && !decklink_ctx->smpte337_detected_ac3)
+        else if(i == 1 && !decklink_ctx->smpte337_detected_ac3[0])
         {
             pthread_mutex_lock( &h->device_list_mutex );
             streams[i]->input_stream_id = h->cur_input_stream_id++;
@@ -1753,7 +1758,7 @@ static void *probe_stream( void *ptr )
     }
 
     /* Add a new output stream type, bitstream audio. */
-    if (decklink_ctx->smpte337_detected_ac3)
+    if (decklink_ctx->smpte337_detected_ac3[0])
     {
         streams[cur_stream] = (obe_int_input_stream_t*)calloc(1, sizeof(*streams[cur_stream]));
         if (!streams[cur_stream])

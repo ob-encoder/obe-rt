@@ -562,6 +562,140 @@ static void dumpAudio(uint16_t *ptr, int fc, int num_channels)
 static int prbs_inited = 0;
 #endif
 
+static int processAudio(decklink_ctx_t *decklink_ctx, decklink_opts_t *decklink_opts_, IDeckLinkAudioInputPacket *audioframe)
+{
+    obe_raw_frame_t *raw_frame = NULL;
+    void *frame_bytes;
+    audioframe->GetBytes(&frame_bytes);
+
+        for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
+            struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
+
+            if (!pair->smpte337_detected_ac3) {
+                /* PCM audio, forward to compressors */
+                raw_frame = new_raw_frame();
+                if (!raw_frame) {
+                    syslog(LOG_ERR, "Malloc failed\n");
+                    goto end;
+                }
+
+                raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
+                raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
+                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P;
+#if KL_PRBS_INPUT
+            {
+            uint32_t *p = (uint32_t *)frame_bytes;
+            //dumpAudio((uint16_t *)p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels);
+
+            if (prbs_inited == 0) {
+                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++) {
+                    for (int j = 0; j < raw_frame->audio_frame.num_channels; j++) {
+                        if (i == (audioframe->GetSampleFrameCount() - 1)) {
+                            if (j == (raw_frame->audio_frame.num_channels - 1)) {
+                                printf("Seeding audio PRBS sequence with upstream value 0x%08x\n", *p >> 16);
+                                prbs15_init_with_seed(&decklink_ctx->prbs, *p >> 16);
+                            }
+                        }
+			p++;
+                    }
+                }
+                prbs_inited = 1;
+            } else {
+                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++) {
+                    for (int j = 0; j < raw_frame->audio_frame.num_channels; j++) {
+                        uint32_t a = *p++ >> 16;
+                        uint32_t b = prbs15_generate(&decklink_ctx->prbs);
+                        if (a != b) {
+                            char t[160];
+                            time_t now = time(0);
+                            sprintf(t, "%s", ctime(&now));
+                            t[strlen(t) - 1] = 0;
+                            fprintf(stderr, "%s: KL PRSB15 Audio frame discontinuity, expected %08" PRIx32 " got %08" PRIx32 "\n", t, b, a);
+                            prbs_inited = 0;
+
+                            // Break the sample frame loop i
+                            i = audioframe->GetSampleFrameCount();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            }
+#endif
+
+                if( av_samples_alloc( raw_frame->audio_frame.audio_data, &raw_frame->audio_frame.linesize, decklink_opts_->num_channels,
+                              raw_frame->audio_frame.num_samples, (AVSampleFormat)raw_frame->audio_frame.sample_fmt, 0 ) < 0 )
+                {
+                    syslog( LOG_ERR, "Malloc failed\n" );
+                    return -1;
+                }
+
+                if( avresample_convert( decklink_ctx->avr, raw_frame->audio_frame.audio_data, raw_frame->audio_frame.linesize,
+                                raw_frame->audio_frame.num_samples, (uint8_t**)&frame_bytes, 0, raw_frame->audio_frame.num_samples ) < 0 )
+                {
+                    syslog( LOG_ERR, "[decklink] Sample format conversion failed\n" );
+                    return -1;
+                }
+
+                BMDTimeValue packet_time;
+                audioframe->GetPacketTime(&packet_time, OBE_CLOCK);
+                raw_frame->pts = packet_time;
+                raw_frame->release_data = obe_release_audio_data;
+                raw_frame->release_frame = obe_release_frame;
+                raw_frame->input_stream_id = pair->input_stream_id;
+                if (add_to_filter_queue(decklink_ctx->h, raw_frame) < 0)
+                    goto fail;
+
+            } /* !pair->smpte337_detected_ac3 */
+            else
+            { /* if pair->smpte337_detected_ac3) */
+
+                /* Ship the buffer + offset into it, down to the encoders. The encoders will look at offset 0. */
+                int depth = 32;
+                int span = 2;
+                int offset = i * ((depth / 8) * span);
+                raw_frame = new_raw_frame();
+                raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
+                raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
+                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P; /* No specific format. The audio filter will play passthrough. */
+
+                int l = audioframe->GetSampleFrameCount() * decklink_opts_->num_channels * (depth / 8);
+                raw_frame->audio_frame.audio_data[0] = (uint8_t *)malloc(l);
+                raw_frame->audio_frame.linesize = raw_frame->audio_frame.num_channels * (depth / 8);
+
+                memcpy(raw_frame->audio_frame.audio_data[0], (uint8_t *)frame_bytes + offset, l - offset);
+
+                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_NONE;
+
+                BMDTimeValue packet_time;
+                audioframe->GetPacketTime(&packet_time, OBE_CLOCK);
+                raw_frame->pts = packet_time;
+                raw_frame->release_data = obe_release_audio_data;
+                raw_frame->release_frame = obe_release_frame;
+                raw_frame->input_stream_id = pair->input_stream_id;
+//printf("frame for pair %d input %d at offset %d\n", pair->nr, raw_frame->input_stream_id, offset);
+
+                add_to_filter_queue(decklink_ctx->h, raw_frame);
+            }
+        } /* For all audio pairs... */
+end:
+
+    return S_OK;
+
+fail:
+
+    if( raw_frame )
+    {
+        if (raw_frame->release_data)
+            raw_frame->release_data( raw_frame );
+        if (raw_frame->release_frame)
+            raw_frame->release_frame( raw_frame );
+    }
+
+    return S_OK;
+}
+
 HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFrame *videoframe, IDeckLinkAudioInputPacket *audioframe )
 {
     decklink_ctx_t *decklink_ctx = &decklink_opts_->decklink_ctx;
@@ -898,118 +1032,7 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
 
     if( audioframe && !decklink_opts_->probe )
     {
-        for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
-            struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
-
-            if (!pair->smpte337_detected_ac3) {
-                /* PCM audio, forward to compressors */
-                audioframe->GetBytes(&frame_bytes);
-                raw_frame = new_raw_frame();
-                if (!raw_frame) {
-                    syslog(LOG_ERR, "Malloc failed\n");
-                    goto end;
-                }
-
-                raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
-                raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
-                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P;
-#if KL_PRBS_INPUT
-            {
-            uint32_t *p = (uint32_t *)frame_bytes;
-            //dumpAudio((uint16_t *)p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels);
-
-            if (prbs_inited == 0) {
-                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++) {
-                    for (int j = 0; j < raw_frame->audio_frame.num_channels; j++) {
-                        if (i == (audioframe->GetSampleFrameCount() - 1)) {
-                            if (j == (raw_frame->audio_frame.num_channels - 1)) {
-                                printf("Seeding audio PRBS sequence with upstream value 0x%08x\n", *p >> 16);
-                                prbs15_init_with_seed(&decklink_ctx->prbs, *p >> 16);
-                            }
-                        }
-			p++;
-                    }
-                }
-                prbs_inited = 1;
-            } else {
-                for (int i = 0; i < audioframe->GetSampleFrameCount(); i++) {
-                    for (int j = 0; j < raw_frame->audio_frame.num_channels; j++) {
-                        uint32_t a = *p++ >> 16;
-                        uint32_t b = prbs15_generate(&decklink_ctx->prbs);
-                        if (a != b) {
-                            char t[160];
-                            time_t now = time(0);
-                            sprintf(t, "%s", ctime(&now));
-                            t[strlen(t) - 1] = 0;
-                            fprintf(stderr, "%s: KL PRSB15 Audio frame discontinuity, expected %08" PRIx32 " got %08" PRIx32 "\n", t, b, a);
-                            prbs_inited = 0;
-
-                            // Break the sample frame loop i
-                            i = audioframe->GetSampleFrameCount();
-                            break;
-                        }
-                    }
-                }
-            }
-
-            }
-#endif
-
-                if( av_samples_alloc( raw_frame->audio_frame.audio_data, &raw_frame->audio_frame.linesize, decklink_opts_->num_channels,
-                              raw_frame->audio_frame.num_samples, (AVSampleFormat)raw_frame->audio_frame.sample_fmt, 0 ) < 0 )
-                {
-                    syslog( LOG_ERR, "Malloc failed\n" );
-                    return -1;
-                }
-
-                if( avresample_convert( decklink_ctx->avr, raw_frame->audio_frame.audio_data, raw_frame->audio_frame.linesize,
-                                raw_frame->audio_frame.num_samples, (uint8_t**)&frame_bytes, 0, raw_frame->audio_frame.num_samples ) < 0 )
-                {
-                    syslog( LOG_ERR, "[decklink] Sample format conversion failed\n" );
-                    return -1;
-                }
-
-                BMDTimeValue packet_time;
-                audioframe->GetPacketTime(&packet_time, OBE_CLOCK);
-                raw_frame->pts = packet_time;
-                raw_frame->release_data = obe_release_audio_data;
-                raw_frame->release_frame = obe_release_frame;
-                raw_frame->input_stream_id = pair->input_stream_id;
-                if (add_to_filter_queue(decklink_ctx->h, raw_frame) < 0)
-                    goto fail;
-
-            } /* !pair->smpte337_detected_ac3 */
-            else
-            { /* if pair->smpte337_detected_ac3) */
-
-                /* Ship the buffer + offset into it, down to the encoders. The encoders will look at offset 0. */
-                int depth = 32;
-                int span = 2;
-                int offset = i * ((depth / 8) * span);
-                raw_frame = new_raw_frame();
-                raw_frame->audio_frame.num_samples = audioframe->GetSampleFrameCount();
-                raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
-                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P; /* No specific format. The audio filter will play passthrough. */
-
-                int l = audioframe->GetSampleFrameCount() * decklink_opts_->num_channels * (depth / 8);
-                raw_frame->audio_frame.audio_data[0] = (uint8_t *)malloc(l);
-                raw_frame->audio_frame.linesize = raw_frame->audio_frame.num_channels * (depth / 8);
-
-                memcpy(raw_frame->audio_frame.audio_data[0], (uint8_t *)frame_bytes + offset, l - offset);
-
-                raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_NONE;
-
-                BMDTimeValue packet_time;
-                audioframe->GetPacketTime(&packet_time, OBE_CLOCK);
-                raw_frame->pts = packet_time;
-                raw_frame->release_data = obe_release_audio_data;
-                raw_frame->release_frame = obe_release_frame;
-                raw_frame->input_stream_id = pair->input_stream_id;
-//printf("frame for pair %d input %d at offset %d\n", pair->nr, raw_frame->input_stream_id, offset);
-
-                add_to_filter_queue(decklink_ctx->h, raw_frame);
-            }
-        } /* For all audio pairs... */
+        processAudio(decklink_ctx, decklink_opts_, audioframe);
     }
 
 end:

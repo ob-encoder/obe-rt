@@ -1357,6 +1357,7 @@ static int open_card( decklink_opts_t *decklink_opts )
 
         pair->nr = i;
         pair->smpte337_detected_ac3 = 0;
+        pair->decklink_ctx = decklink_ctx;
 
         if (OPTION_ENABLED(bitstream_audio)) {
             pair->smpte337_detector = smpte337_detector_alloc((smpte337_detector_callback)detector_callback, pair);

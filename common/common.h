@@ -165,9 +165,6 @@ typedef struct
 
     /* VBI */
     int vbi_ntsc;
-
-    /** Misc **/
-    int source;
 } obe_int_input_stream_t;
 
 typedef struct

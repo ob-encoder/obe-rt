@@ -23,6 +23,8 @@
 #include "common/common.h"
 #include "audio.h"
 
+#define LOCAL_DEBUG 0
+
 static void *start_filter_audio( void *ptr )
 {
     obe_raw_frame_t *raw_frame, *split_raw_frame;
@@ -48,7 +50,7 @@ static void *start_filter_audio( void *ptr )
         raw_frame = filter->queue.queue[0];
         pthread_mutex_unlock( &filter->queue.mutex );
 
-#if 0
+#if LOCAL_DEBUG
 printf("%s() raw_frame->input_stream_id = %d, num_encoders = %d\n", __func__, raw_frame->input_stream_id, h->num_encoders);
         printf("%s() linesize = %d, num_samples = %d, num_channels = %d, sample_fmt = %d\n",
                 __func__,
@@ -114,6 +116,13 @@ printf("%s() raw_frame->input_stream_id = %d, num_encoders = %d\n", __func__, ra
             /* TODO: Match the input raw frame to the output encoder, else we could send
              * frames for ac3 encoder #2 to ac3 encoder #1.
              */
+            if (raw_frame->input_stream_id != h->encoders[i]->output_stream_id)
+                continue;
+
+#if LOCAL_DEBUG
+            printf("%s() adding frame for input %d to encoder output %d\n", __func__,
+                raw_frame->input_stream_id, h->encoders[i]->output_stream_id);
+#endif
 
             remove_from_queue(&filter->queue);
             add_to_encode_queue(h, raw_frame, h->encoders[i]->output_stream_id);

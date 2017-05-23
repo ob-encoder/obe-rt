@@ -986,6 +986,9 @@ HRESULT DeckLinkCaptureDelegate::VideoInputFrameArrived( IDeckLinkVideoInputFram
         }
 
         for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
+
+            /* Ship the buffer + offset into it, down to the encoders. The encoders will look at
+             * offset 0. */
             struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
             if(pair->smpte337_detected_ac3)
             {

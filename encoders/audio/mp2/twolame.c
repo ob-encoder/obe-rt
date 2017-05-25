@@ -148,14 +148,6 @@ static void *start_encoder_mp2( void *ptr )
         raw_frame = encoder->queue.queue[0];
         pthread_mutex_unlock( &encoder->queue.mutex );
 
-	/* Discard any buffers that arrived at our encoder, but didn't belong to us. */
-        if (raw_frame->input_stream_id != encoder->output_stream_id) {
-            raw_frame->release_data( raw_frame );
-            raw_frame->release_frame( raw_frame );
-            remove_from_queue( &encoder->queue );
-            continue;
-        }
-
 #if LOCAL_DEBUG
         /* Send any audio to the AC3 frame slicer.
          * Push the buffer starting at the channel containing bitstream, and span 2 channels,

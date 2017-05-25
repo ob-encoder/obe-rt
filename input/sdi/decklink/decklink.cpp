@@ -567,11 +567,12 @@ static int processAudio(decklink_ctx_t *decklink_ctx, decklink_opts_t *decklink_
     obe_raw_frame_t *raw_frame = NULL;
     void *frame_bytes;
     audioframe->GetBytes(&frame_bytes);
+    int hasSentAudioBuffer = 0;
 
         for (int i = 0; i < MAX_AUDIO_PAIRS; i++) {
             struct audio_pair_s *pair = &decklink_ctx->audio_pairs[i];
 
-            if (!pair->smpte337_detected_ac3) {
+            if (!pair->smpte337_detected_ac3 && hasSentAudioBuffer == 0) {
                 /* PCM audio, forward to compressors */
                 raw_frame = new_raw_frame();
                 if (!raw_frame) {
@@ -654,10 +655,11 @@ static int processAudio(decklink_ctx_t *decklink_ctx, decklink_opts_t *decklink_
                 raw_frame->input_stream_id = pair->input_stream_id;
                 if (add_to_filter_queue(decklink_ctx->h, raw_frame) < 0)
                     goto fail;
+                hasSentAudioBuffer++;
 
             } /* !pair->smpte337_detected_ac3 */
-            else
-            { /* if pair->smpte337_detected_ac3) */
+
+            if (pair->smpte337_detected_ac3) {
 
                 /* Ship the buffer + offset into it, down to the encoders. The encoders will look at offset 0. */
                 int depth = 32;

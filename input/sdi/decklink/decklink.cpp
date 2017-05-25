@@ -230,7 +230,7 @@ typedef struct
     AVCodec         *dec;
     AVCodecContext  *codec;
 
-    /* Audio */
+    /* Audio - Sample Rate Conversion. We convert S32 interleaved into S32P planer. */
     AVAudioResampleContext *avr;
 
     int64_t last_frame_time;
@@ -633,9 +633,14 @@ static int processAudio(decklink_ctx_t *decklink_ctx, decklink_opts_t *decklink_
                     return -1;
                 }
 
-                /* Convert input samples and write them to the output FIFO. */
-                if( avresample_convert( decklink_ctx->avr, raw_frame->audio_frame.audio_data, raw_frame->audio_frame.linesize,
-                                raw_frame->audio_frame.num_samples, (uint8_t**)&frame_bytes, 0, raw_frame->audio_frame.num_samples ) < 0 )
+                /* Convert input samples from S32 interleaved into S32P planer. */
+                if (avresample_convert(decklink_ctx->avr,
+                        raw_frame->audio_frame.audio_data,
+                        raw_frame->audio_frame.linesize,
+                        raw_frame->audio_frame.num_samples,
+                        (uint8_t**)&frame_bytes,
+                        0,
+                        raw_frame->audio_frame.num_samples) < 0)
                 {
                     syslog( LOG_ERR, "[decklink] Sample format conversion failed\n" );
                     return -1;
@@ -1788,7 +1793,6 @@ static void *probe_stream( void *ptr )
         streams[cur_stream]->input_stream_id = h->cur_input_stream_id++;
         pthread_mutex_unlock(&h->device_list_mutex);
 
-// MMM
         if (!pair->smpte337_detected_ac3)
         {
             streams[cur_stream]->stream_type = STREAM_TYPE_AUDIO;

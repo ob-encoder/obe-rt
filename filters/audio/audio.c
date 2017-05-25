@@ -90,10 +90,16 @@ printf("%s() raw_frame->input_stream_id = %d, num_encoders = %d\n", __func__, ra
                 return NULL;
             }
 
-            /* TODO: offset the channel pointers by the user's request */
-            av_samples_copy(split_raw_frame->audio_frame.audio_data,
-                            &raw_frame->audio_frame.audio_data[((output_stream->sdi_audio_pair - 1) << 1) + output_stream->mono_channel], 0, 0,
-                            split_raw_frame->audio_frame.num_samples, num_channels, split_raw_frame->audio_frame.sample_fmt);
+            /* Copy samples for each channel into a new buffer, so each downstream encoder can
+             * compress the channels the user has selected via sdi_audio_pair.
+             */
+            av_samples_copy(split_raw_frame->audio_frame.audio_data, /* dst */
+                            &raw_frame->audio_frame.audio_data[((output_stream->sdi_audio_pair - 1) << 1) + output_stream->mono_channel], /* src */
+                            0, /* dst offset */
+                            0, /* src offset */
+                            split_raw_frame->audio_frame.num_samples,
+                            num_channels,
+                            split_raw_frame->audio_frame.sample_fmt);
 
             add_to_encode_queue(h, split_raw_frame, h->encoders[i]->output_stream_id);
         } /* For all PCM encoders */

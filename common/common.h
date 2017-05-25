@@ -46,6 +46,7 @@
 #define MAX_STREAMS 40
 #define MAX_CHANNELS 16
 
+#define MIN_PROBE_TIME  5
 #define MAX_PROBE_TIME 20
 
 #define OBE_CLOCK 27000000LL

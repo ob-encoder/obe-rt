@@ -583,6 +583,7 @@ static int processAudio(decklink_ctx_t *decklink_ctx, decklink_opts_t *decklink_
                 raw_frame->audio_frame.num_channels = decklink_opts_->num_channels;
                 raw_frame->audio_frame.sample_fmt = AV_SAMPLE_FMT_S32P;
 #if KL_PRBS_INPUT
+/* ST: This code is optionally compiled in, and hasn't been validated since we refactored a little. */
             {
             uint32_t *p = (uint32_t *)frame_bytes;
             //dumpAudio((uint16_t *)p, audioframe->GetSampleFrameCount(), raw_frame->audio_frame.num_channels);
@@ -624,6 +625,7 @@ static int processAudio(decklink_ctx_t *decklink_ctx, decklink_opts_t *decklink_
             }
 #endif
 
+                /* Allocate a samples buffer for num_samples samples, and fill data pointers and linesize accordingly. */
                 if( av_samples_alloc( raw_frame->audio_frame.audio_data, &raw_frame->audio_frame.linesize, decklink_opts_->num_channels,
                               raw_frame->audio_frame.num_samples, (AVSampleFormat)raw_frame->audio_frame.sample_fmt, 0 ) < 0 )
                 {
@@ -631,6 +633,7 @@ static int processAudio(decklink_ctx_t *decklink_ctx, decklink_opts_t *decklink_
                     return -1;
                 }
 
+                /* Convert input samples and write them to the output FIFO. */
                 if( avresample_convert( decklink_ctx->avr, raw_frame->audio_frame.audio_data, raw_frame->audio_frame.linesize,
                                 raw_frame->audio_frame.num_samples, (uint8_t**)&frame_bytes, 0, raw_frame->audio_frame.num_samples ) < 0 )
                 {

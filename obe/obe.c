@@ -471,6 +471,7 @@ obe_t *obe_setup( void )
         fprintf( stderr, "Malloc failed\n" );
         return NULL;
     }
+    h->probe_time_seconds = MAX_PROBE_TIME;
 
     pthread_mutex_init( &h->device_list_mutex, NULL );
 
@@ -591,7 +592,6 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
 
     obe_input_func_t  input;
 
-    int probe_time = MAX_PROBE_TIME;
     int i = 0;
     int prev_devices = h->num_devices;
     int cur_devices;
@@ -674,9 +674,9 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
     else
         printf( "Probing device: Decklink card %i. ", input_device->card_idx );
 
-    printf( "Timeout %i seconds \n", probe_time );
+    printf("Timeout %i seconds\n", h->probe_time_seconds);
 
-    while( i++ < probe_time )
+    while (i++ < h->probe_time_seconds)
     {
         sleep( 1 );
         fprintf( stderr, "." );

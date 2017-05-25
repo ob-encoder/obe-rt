@@ -44,8 +44,10 @@ static void *start_smoothing( void *ptr )
                 pthread_mutex_lock( &h->encoders[i]->queue.mutex );
                 while( !h->encoders[i]->is_ready )
                     pthread_cond_wait( &h->encoders[i]->queue.in_cv, &h->encoders[i]->queue.mutex );
+#if X264_BUILD < 148
                 x264_param_t *params = h->encoders[i]->encoder_params;
                 buffer_frames = params->sc.i_buffer_size;
+#endif
                 pthread_mutex_unlock( &h->encoders[i]->queue.mutex );
                 break;
             }

@@ -31,6 +31,9 @@
 #include "mux/mux.h"
 #include "output/output.h"
 
+/* Avoid a minor compiler warning and defining GNU_SOURCE */
+extern int pthread_setname_np(pthread_t thread, const char *name);
+
 /** Utilities **/
 int64_t obe_mdate( void )
 {
@@ -270,6 +273,9 @@ int add_to_filter_queue( obe_t *h, obe_raw_frame_t *raw_frame )
     if( !filter )
         return -1;
 
+#if 0
+PRINT_OBE_FILTER(filter, "ADD TO QUEUE");
+#endif
     return add_to_queue( &filter->queue, raw_frame );
 }
 
@@ -465,6 +471,7 @@ obe_t *obe_setup( void )
         fprintf( stderr, "Malloc failed\n" );
         return NULL;
     }
+    h->probe_time_seconds = MAX_PROBE_TIME;
 
     pthread_mutex_init( &h->device_list_mutex, NULL );
 
@@ -585,7 +592,6 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
 
     obe_input_func_t  input;
 
-    int probe_time = MAX_PROBE_TIME;
     int i = 0;
     int prev_devices = h->num_devices;
     int cur_devices;
@@ -614,6 +620,8 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
 #endif
     else if( input_device->input_type == INPUT_DEVICE_LINSYS_SDI )
         input = linsys_sdi_input;
+    else if (input_device->input_type == INPUT_DEVICE_V4L2)
+        input = v4l2_input;
     else
     {
         fprintf( stderr, "Invalid input device \n" );
@@ -655,17 +663,20 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
         fprintf( stderr, "Couldn't create probe thread \n" );
         goto fail;
     }
+    pthread_setname_np(thread, "obe-probe");
 
     if( input_device->location )
         printf( "Probing device: \"%s\". ", input_device->location );
     else if( input_device->input_type == INPUT_DEVICE_LINSYS_SDI )
         printf( "Probing device: Linsys card %i. ", input_device->card_idx );
+    else if (input_device->input_type == INPUT_DEVICE_V4L2)
+        printf( "Probing device: V4L2 card %i. ", input_device->card_idx);
     else
         printf( "Probing device: Decklink card %i. ", input_device->card_idx );
 
-    printf( "Timeout %i seconds \n", probe_time );
+    printf("Timeout %i seconds\n", h->probe_time_seconds);
 
-    while( i++ < probe_time )
+    while (i++ < h->probe_time_seconds)
     {
         sleep( 1 );
         fprintf( stderr, "." );
@@ -683,7 +694,8 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
     {
         fprintf( stderr, "Could not probe device \n" );
         program = NULL;
-        return -1;
+        args = NULL;
+        goto fail;
     }
 
     // TODO metadata etc
@@ -692,11 +704,12 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
     if( !program->streams )
     {
         fprintf( stderr, "Malloc failed \n" );
-        return -1;
+        goto fail;
     }
 
     h->devices[h->num_devices-1]->probed_streams = program->streams;
 
+    /* Clone all of the probed input parameters into OBE's source abstraction. */
     for( i = 0; i < program->num_streams; i++ )
     {
         stream_in = h->devices[h->num_devices-1]->streams[i];
@@ -707,6 +720,7 @@ int obe_probe_device( obe_t *h, obe_input_t *input_device, obe_input_program_t *
         stream_out->stream_format = stream_in->stream_format;
 
         stream_out->bitrate = stream_in->bitrate;
+        stream_out->sdi_audio_pair = stream_in->sdi_audio_pair;
 
         stream_out->num_frame_data = stream_in->num_frame_data;
         stream_out->frame_data = stream_in->frame_data;
@@ -740,7 +754,7 @@ fail:
     return -1;
 }
 
-int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t *param )
+int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t *param, const char *preset_name)
 {
     obe_int_input_stream_t *stream = get_input_stream( h, input_stream_id );
     if( !stream )
@@ -761,9 +775,10 @@ int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t
         return -1;
     }
 
-    if( h->obe_system == OBE_SYSTEM_TYPE_LOWEST_LATENCY || h->obe_system == OBE_SYSTEM_TYPE_LOW_LATENCY )
-        x264_param_default_preset( param, "veryfast", "zerolatency" );
-    else
+    if( h->obe_system == OBE_SYSTEM_TYPE_LOWEST_LATENCY || h->obe_system == OBE_SYSTEM_TYPE_LOW_LATENCY ) {
+        x264_param_default_preset(param, preset_name, "zerolatency");
+        // printf("Using x264 preset: %s\n", stream->preset_name);
+    } else
         x264_param_default( param );
 
     param->b_deterministic = 0;
@@ -826,7 +841,11 @@ int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t
     }
 
     x264_param_apply_profile( param, X264_BIT_DEPTH == 10 ? "high10" : "high" );
+#if X264_BUILD < 148
     param->i_nal_hrd = X264_NAL_HRD_FAKE_VBR;
+#else
+    param->i_nal_hrd = X264_NAL_HRD_VBR;
+#endif
     param->b_aud = 1;
     param->i_log_level = X264_LOG_INFO;
 
@@ -834,6 +853,7 @@ int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t
 
     if( h->obe_system == OBE_SYSTEM_TYPE_GENERIC )
     {
+#if X264_BUILD < 148
         param->sc.f_speed = 1.0;
         param->sc.b_alt_timer = 1;
         if( param->i_width >= 1280 && param->i_height >= 720 )
@@ -843,6 +863,7 @@ int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t
             param->sc.max_preset = 10;
             param->i_bframe_adaptive = X264_B_ADAPT_TRELLIS;
         }
+#endif
 
         param->rc.i_lookahead = param->i_keyint_max;
     }
@@ -984,6 +1005,8 @@ int obe_start( obe_t *h )
 #endif
     else if( h->devices[0]->device_type == INPUT_DEVICE_LINSYS_SDI )
         input = linsys_sdi_input;
+    else if (h->devices[0]->device_type == INPUT_DEVICE_V4L2)
+        input = v4l2_input;
     else
     {
         fprintf( stderr, "Invalid input device \n" );
@@ -1001,6 +1024,7 @@ int obe_start( obe_t *h )
             fprintf( stderr, "Couldn't create output thread \n" );
             goto fail;
         }
+        pthread_setname_np(h->outputs[i]->output_thread, "obe-output");
     }
 
     /* Open Encoder Threads */
@@ -1042,6 +1066,26 @@ int obe_start( obe_t *h )
                     fprintf( stderr, "Couldn't create encode thread \n" );
                     goto fail;
                 }
+                pthread_setname_np(h->encoders[h->num_encoders]->encoder_thread, "obe-vid-encoder");
+            }
+            else if(h->output_streams[i].stream_format == AUDIO_AC_3_BITSTREAM) {
+                input_stream = get_input_stream(h, h->output_streams[i].input_stream_id);
+                h->output_streams[i].sdi_audio_pair = input_stream->sdi_audio_pair;
+                aud_enc_params = calloc(1, sizeof(*aud_enc_params));
+                if(!aud_enc_params) {
+                    fprintf(stderr, "Malloc failed\n");
+                    goto fail;
+                }
+                aud_enc_params->h = h;
+                aud_enc_params->encoder = h->encoders[h->num_encoders];
+                aud_enc_params->stream = &h->output_streams[i];
+
+                if (pthread_create(&h->encoders[h->num_encoders]->encoder_thread, NULL, ac3bitstream_encoder.start_encoder, (void*)aud_enc_params ) < 0 )
+                {
+                    fprintf(stderr, "Couldn't create ac3bitstream encode thread\n");
+                    goto fail;
+                }
+                pthread_setname_np(h->encoders[h->num_encoders]->encoder_thread, "obe-aud-encoder");
             }
             else if( h->output_streams[i].stream_format == AUDIO_AC_3 || h->output_streams[i].stream_format == AUDIO_E_AC_3 ||
                      h->output_streams[i].stream_format == AUDIO_AAC  || h->output_streams[i].stream_format == AUDIO_MP2 )
@@ -1065,7 +1109,7 @@ int obe_start( obe_t *h )
                 aud_enc_params->sample_rate = input_stream->sample_rate;
                 /* TODO: check the bitrate is allowed by the format */
 
-                h->output_streams[i].sdi_audio_pair = MAX( h->output_streams[i].sdi_audio_pair, 0 );
+                h->output_streams[i].sdi_audio_pair = input_stream->sdi_audio_pair;
 
                 /* Choose the optimal number of audio frames per PES
                  * TODO: This should be set after the encoder has told us the frame size */
@@ -1091,6 +1135,7 @@ int obe_start( obe_t *h )
                     fprintf( stderr, "Couldn't create encode thread \n" );
                     goto fail;
                 }
+                pthread_setname_np(h->encoders[h->num_encoders]->encoder_thread, "obe-aud-encoder");
             }
 
             h->num_encoders++;
@@ -1105,6 +1150,7 @@ int obe_start( obe_t *h )
             fprintf( stderr, "Couldn't create encoder smoothing thread \n" );
             goto fail;
         }
+        pthread_setname_np(h->enc_smoothing_thread, "obe-enc-smoothing");
     }
 
     /* Open Mux Smoothing Thread */
@@ -1113,7 +1159,7 @@ int obe_start( obe_t *h )
         fprintf( stderr, "Couldn't create mux smoothing thread \n" );
         goto fail;
     }
-
+    pthread_setname_np(h->mux_smoothing_thread, "obe-mux-smoothing");
 
     /* Open Mux Thread */
     obe_mux_params_t *mux_params = calloc( 1, sizeof(*mux_params) );
@@ -1132,6 +1178,7 @@ int obe_start( obe_t *h )
         fprintf( stderr, "Couldn't create mux thread \n" );
         goto fail;
     }
+    pthread_setname_np(h->mux_thread, "obe-muxer");
 
     /* Open Filter Thread */
     for( int i = 0; i < h->devices[0]->num_input_streams; i++ )
@@ -1168,15 +1215,25 @@ int obe_start( obe_t *h )
                 vid_filter_params->filter = h->filters[h->num_filters];
                 vid_filter_params->input_stream = input_stream;
                 vid_filter_params->target_csp = h->output_streams[i].avc_param.i_csp & X264_CSP_MASK;
+#if 0
+                vid_filter_params->target_csp = X264_CSP_I422;
+#endif
 
                 if( pthread_create( &h->filters[h->num_filters]->filter_thread, NULL, video_filter.start_filter, vid_filter_params ) < 0 )
                 {
                     fprintf( stderr, "Couldn't create video filter thread \n" );
                     goto fail;
                 }
+                pthread_setname_np(h->filters[h->num_filters]->filter_thread, "obe-vid-filter");
+#if 0
+PRINT_OBE_FILTER(h->filters[h->num_filters], "VIDEO FILTER");
+#endif
             }
             else
             {
+#if 0
+PRINT_OBE_FILTER(h->filters[h->num_filters], "AUDIO FILTER");
+#endif
                 aud_filter_params = calloc( 1, sizeof(*aud_filter_params) );
                 if( !aud_filter_params )
                 {
@@ -1192,6 +1249,7 @@ int obe_start( obe_t *h )
                     fprintf( stderr, "Couldn't create filter thread \n" );
                     goto fail;
                 }
+                pthread_setname_np(h->filters[h->num_filters]->filter_thread, "obe-aud-filter");
             }
 
             h->num_filters++;
@@ -1218,6 +1276,7 @@ int obe_start( obe_t *h )
         fprintf( stderr, "Couldn't create input thread \n" );
         goto fail;
     }
+    pthread_setname_np(h->devices[0]->device_thread, "obe-device");
 
     h->is_active = 1;
 

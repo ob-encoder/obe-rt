@@ -44,5 +44,6 @@ typedef struct
 
 extern const obe_aud_enc_func_t twolame_encoder;
 extern const obe_aud_enc_func_t lavc_encoder;
+extern const obe_aud_enc_func_t ac3bitstream_encoder;
 
 #endif

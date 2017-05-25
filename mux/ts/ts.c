@@ -35,12 +35,15 @@ static const int mpegts_stream_info[][3] =
     /* TODO 302M */
     { AUDIO_MP2,   LIBMPEGTS_AUDIO_MPEG2,    LIBMPEGTS_STREAM_ID_MPEGAUDIO },
     { AUDIO_AC_3,  LIBMPEGTS_AUDIO_AC3,      LIBMPEGTS_STREAM_ID_PRIVATE_1 },
+    { AUDIO_AC_3_BITSTREAM,  LIBMPEGTS_AUDIO_AC3,      LIBMPEGTS_STREAM_ID_PRIVATE_1 },
     { AUDIO_E_AC_3,  LIBMPEGTS_AUDIO_EAC3,   LIBMPEGTS_STREAM_ID_PRIVATE_1 },
     { AUDIO_AAC,     LIBMPEGTS_AUDIO_ADTS,   LIBMPEGTS_STREAM_ID_MPEGAUDIO },
     { AUDIO_AAC,     LIBMPEGTS_AUDIO_LATM,   LIBMPEGTS_STREAM_ID_MPEGAUDIO },
     { SUBTITLES_DVB, LIBMPEGTS_DVB_SUB,      LIBMPEGTS_STREAM_ID_PRIVATE_1 },
     { MISC_TELETEXT, LIBMPEGTS_DVB_TELETEXT, LIBMPEGTS_STREAM_ID_PRIVATE_1 },
     { VBI_RAW,       LIBMPEGTS_DVB_VBI,      LIBMPEGTS_STREAM_ID_PRIVATE_1 },
+    { DVB_TABLE_SECTION, LIBMPEGTS_TABLE_SECTION,  LIBMPEGTS_STREAM_ID_PRIVATE_1 },
+    { SMPTE2038, LIBMPEGTS_ANCILLARY_2038, LIBMPEGTS_STREAM_ID_PRIVATE_1 },
     { -1, -1, -1 },
 };
 
@@ -441,6 +444,18 @@ void *open_muxer( void *ptr )
         for( int i = 0; i < h->mux_queue.size; i++ )
         {
             coded_frame = h->mux_queue.queue[i];
+
+            if (h->verbose_bitmask & MUX__DQ_HEXDUMP) {
+                printf("coded_frame: output_stream_id = %d, is_video = %d, len = %6d -- ",
+                    coded_frame->output_stream_id, coded_frame->is_video, coded_frame->len);
+                    for (int x = 0; x < coded_frame->len; x++) {
+                        printf("%02x ", *(coded_frame->data + x));
+                        if (x > 8)
+                            break;
+                    }
+                printf("\n");
+            }
+
             output_stream = get_output_mux_stream( mux_params, coded_frame->output_stream_id );
             // FIXME name
             int64_t rescaled_dts = coded_frame->pts - first_video_pts + first_video_real_pts;

@@ -49,6 +49,7 @@ static int set_stream( char *command, obecli_command_t *child );
 static int set_muxer( char *command, obecli_command_t *child );
 static int set_output( char *command, obecli_command_t *child );
 static int set_outputs( char *command, obecli_command_t *child );
+static int set_verbose( char *command, obecli_command_t *child );
 
 static int show_bitdepth( char *command, obecli_command_t *child );
 static int show_decoders( char *command, obecli_command_t *child );
@@ -144,6 +145,7 @@ static obecli_command_t set_commands[] =
     { "mux",    "[name] OR opts [opts]",  "Set muxer name or muxer opts",   set_muxer,  NULL },
     { "output", "opts outputid:[opts]",   "Set output name or output opts", set_output, NULL },
     { "outputs", "[number]",              "Set output name or output opts", set_outputs, NULL },
+    { "verbose", "[number]",              "Set verbosity level", set_verbose, NULL },
     { 0 }
 };
 
@@ -167,6 +169,7 @@ static const obecli_input_name_t input_names[] =
     { INPUT_URL,             "URL",      "URL (includes UDP and RTP)",             "libavformat" },
     { INPUT_DEVICE_DECKLINK, "Decklink", "Blackmagic Design Decklink input",       "internal" },
     { INPUT_DEVICE_DECKLINK, "Linsys SDI", "Linear Systems (DVEO) SDI card input", "internal" },
+    { INPUT_DEVICE_V4L2    , "V4L2", "Video4Linux2 Raw Frame Device", "internal" },
     { 0, 0, 0 },
 };
 
@@ -179,6 +182,7 @@ static const obecli_format_name_t format_names[] =
     { AUDIO_PCM,    "PCM",       "PCM (raw audio)",       "N/A",                       "N/A" },
     { AUDIO_MP2,    "MP2",       "MPEG-1 Layer II Audio", "FFmpeg MP2 audio decoder",  "twolame encoder" },
     { AUDIO_AC_3,   "AC3",       "ATSC A/52B / AC-3",     "FFmpeg AC-3 audio decoder", "FFmpeg AC-3 encoder" },
+    { AUDIO_AC_3_BITSTREAM,   "A52",       "ATSC A/52B / AC-3 Bitstream Passthrough", "N/A", "N/A" },
     { AUDIO_E_AC_3, "E-AC3",     "ATSC A/52B Annex E / Enhanced AC-3", "FFmpeg E-AC3 audio decoder", "FFmpeg E-AC3 encoder" },
 //    { AUDIO_E_DIST, "E-Dist",  "E-distribution audio" },
     { AUDIO_AAC,    "AAC",       "Advanced Audio Coding", "FFmpeg AAC decoder",        "FFmpeg AAC encoder" },

@@ -31,6 +31,12 @@
 #include "x86/vfilter.h"
 #include "input/sdi/sdi.h"
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+#include <libklmonitoring/klmonitoring.h>
+static struct kl_histogram filter_encode;
+static int histogram_dump = 0;
+#endif
+
 
 #if X264_BIT_DEPTH > 8
 typedef uint16_t pixel;
@@ -297,6 +303,7 @@ static int resize_frame( obe_vid_filter_ctx_t *vfilt, obe_raw_frame_t *raw_frame
     tmp_image.height = raw_frame->img.height;
     tmp_image.planes = av_pix_fmt_descriptors[vfilt->dst_pix_fmt].nb_components;
     tmp_image.csp = vfilt->dst_pix_fmt;
+//printf("filter new csp is %d\n", vfilt->dst_pix_fmt);
     tmp_image.format = raw_frame->img.format;
 
     if( av_image_alloc( tmp_image.plane, tmp_image.stride, tmp_image.width, tmp_image.height+1,
@@ -456,10 +463,18 @@ static int dither_image( obe_vid_filter_ctx_t *vfilt, obe_raw_frame_t *raw_frame
     obe_image_t *out = &tmp_image;
 
     tmp_image.csp = img->csp == PIX_FMT_YUV422P10 ? PIX_FMT_YUV422P : PIX_FMT_YUV420P;
+#if 0
+printf("%s() inputcsp = %d csp = %d   PIX_FMT_YUV422P = %d PIX_FMT_YUV420P = %d\n", __func__, img->csp, tmp_image.csp, PIX_FMT_YUV422P, PIX_FMT_YUV420P);
+if (tmp_image.csp == PIX_FMT_YUV420P)
+  printf("CSP now PIX_FMT_YUV420P\n");
+#endif
     tmp_image.width = raw_frame->img.width;
     tmp_image.height = raw_frame->img.height;
     tmp_image.planes = av_pix_fmt_descriptors[tmp_image.csp].nb_components;
     tmp_image.format = raw_frame->img.format;
+#if 0
+printf("%s(2) inputcsp = %d csp = %d   PIX_FMT_YUV422P = %d PIX_FMT_YUV420P = %d\n", __func__, img->csp, tmp_image.csp, PIX_FMT_YUV422P, PIX_FMT_YUV420P);
+#endif
 
     if( av_image_alloc( tmp_image.plane, tmp_image.stride, tmp_image.width, tmp_image.height+1,
                         tmp_image.csp, 16 ) < 0 )
@@ -671,8 +686,12 @@ static int encapsulate_user_data( obe_raw_frame_t *raw_frame, obe_int_input_stre
     return ret;
 }
 
-static void *start_filter( void *ptr )
+static void *start_filter_video( void *ptr )
 {
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+    kl_histogram_reset(&filter_encode, "video frame filter", KL_BUCKET_VIDEO);
+#endif
+
     obe_vid_filter_params_t *filter_params = ptr;
     obe_t *h = filter_params->h;
     obe_filter_t *filter = filter_params->filter;
@@ -708,8 +727,12 @@ static void *start_filter( void *ptr )
         }
 
         raw_frame = filter->queue.queue[0];
+//PRINT_OBE_IMAGE(&raw_frame->img, "VIDEO FILTER  PRE");
         pthread_mutex_unlock( &filter->queue.mutex );
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_sample_begin(&filter_encode);
+#endif
         /* TODO: scale 8-bit to 10-bit
          * TODO: convert from 4:2:0 to 4:2:2 */
 
@@ -723,6 +746,7 @@ static void *start_filter( void *ptr )
             if( resize_frame( vfilt, raw_frame, output_stream->avc_param.i_width ) < 0 )
                 goto end;
         }
+//PRINT_OBE_IMAGE(&raw_frame->img, "RESIZE POST      ");
 
         if( av_pix_fmt_get_chroma_sub_sample( raw_frame->img.csp, &h_shift, &v_shift ) < 0 )
             goto end;
@@ -740,9 +764,20 @@ static void *start_filter( void *ptr )
             if( dither_image( vfilt, raw_frame ) < 0 )
                 goto end;
         }
+//PRINT_OBE_IMAGE(&raw_frame->img, "DITHER POST      ");
 
         if( encapsulate_user_data( raw_frame, input_stream ) < 0 )
             goto end;
+
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_sample_complete(&filter_encode);
+        if (histogram_dump++ > 240) {
+                histogram_dump = 0;
+#if PRINT_HISTOGRAMS
+                kl_histogram_printf(&filter_encode);
+#endif
+        }
+#endif
 
         /* If SAR, on an SD stream, has not been updated by AFD or WSS, set to default 4:3
          * TODO: make this user-choosable. OBE will prioritise any SAR information from AFD or WSS over any user settings */
@@ -753,6 +788,7 @@ static void *start_filter( void *ptr )
         }
 
         remove_from_queue( &filter->queue );
+//PRINT_OBE_IMAGE(&raw_frame->img, "VIDEO FILTER POST");
         add_to_encode_queue( h, raw_frame, 0 );
     }
 
@@ -770,4 +806,4 @@ end:
     return NULL;
 }
 
-const obe_vid_filter_func_t video_filter = { start_filter };
+const obe_vid_filter_func_t video_filter = { start_filter_video };

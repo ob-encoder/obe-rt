@@ -44,4 +44,24 @@ checkasm
 dataDec.txt
 log.dec
 
-obecli
+.deps/
+Makefile.in
+aclocal.m4
+autom4te.cache/
+#	build.txt
+config.status
+depcomp
+install-sh
+libtool
+ltmain.sh
+Makefile
+config.guess
+config.sub
+configure
+m4/
+missing
+obe/.deps/
+obe/Makefile
+obe/Makefile.in
+obe/obecli
+

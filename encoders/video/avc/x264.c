@@ -25,15 +25,29 @@
 #include "encoders/video/video.h"
 #include <libavutil/mathematics.h>
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+#include <libklmonitoring/klmonitoring.h>
+static struct kl_histogram frame_encode;
+static struct kl_histogram gop_encode;
+static int histogram_dump = 0;
+#endif
+
 static void x264_logger( void *p_unused, int i_level, const char *psz_fmt, va_list arg )
 {
     if( i_level <= X264_LOG_INFO )
         vsyslog( i_level == X264_LOG_INFO ? LOG_INFO : i_level == X264_LOG_WARNING ? LOG_WARNING : LOG_ERR, psz_fmt, arg );
 }
 
+/* Convert a obe_raw_frame_t into a x264_picture_t struct.
+ * Incoming frame is colorspace YUV420P.
+ */
 static int convert_obe_to_x264_pic( x264_picture_t *pic, obe_raw_frame_t *raw_frame )
 {
     obe_image_t *img = &raw_frame->img;
+#if 0
+PRINT_OBE_IMAGE(img, "      X264->img");
+PRINT_OBE_IMAGE(&raw_frame->alloc_img, "alloc X264->img");
+#endif
     int idx = 0, count = 0;
 
     x264_picture_init( pic );
@@ -42,6 +56,15 @@ static int convert_obe_to_x264_pic( x264_picture_t *pic, obe_raw_frame_t *raw_fr
     memcpy( pic->img.plane, img->plane, sizeof(img->plane) );
     pic->img.i_plane = img->planes;
     pic->img.i_csp = img->csp == PIX_FMT_YUV422P || img->csp == PIX_FMT_YUV422P10 ? X264_CSP_I422 : X264_CSP_I420;
+#if 0
+    pic->img.i_csp = X264_CSP_I422;
+#endif
+#if 0
+printf("pic->img.i_csp = %d [%s] bits = %d\n",
+  pic->img.i_csp,
+  pic->img.i_csp == X264_CSP_I422 ? "X264_CSP_I422" : "X264_CSP_I420",
+  X264_BIT_DEPTH);
+#endif
 
     if( X264_BIT_DEPTH == 10 )
         pic->img.i_csp |= X264_CSP_HIGH_DEPTH;
@@ -100,6 +123,13 @@ static int convert_obe_to_x264_pic( x264_picture_t *pic, obe_raw_frame_t *raw_fr
 
 static void *start_encoder( void *ptr )
 {
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+    kl_histogram_reset(&frame_encode, "video frame encode", KL_BUCKET_VIDEO);
+    kl_histogram_reset(&gop_encode, "GOP compression time", KL_BUCKET_VIDEO);
+    //kl_histogram_rrd_gauge_enable(&gop_encode, "/tmp/gopcompression.rrd", "X264 GOP Compression");
+    kl_histogram_cumulative_initialize(&gop_encode);
+#endif
+
     obe_vid_enc_params_t *enc_params = ptr;
     obe_t *h = enc_params->h;
     obe_encoder_t *encoder = enc_params->encoder;
@@ -119,6 +149,12 @@ static void *start_encoder( void *ptr )
     pthread_mutex_lock( &encoder->queue.mutex );
 
     enc_params->avc_param.pf_log = x264_logger;
+    //enc_params->avc_param.i_log_level = 65535;
+
+#if 0
+    enc_params->avc_param.i_csp = X264_CSP_I422;
+#endif
+
     s = x264_encoder_open( &enc_params->avc_param );
     if( !s )
     {
@@ -141,7 +177,9 @@ static void *start_encoder( void *ptr )
     encoder->is_ready = 1;
     /* XXX: This will need fixing for soft pulldown streams */
     frame_duration = av_rescale_q( 1, (AVRational){enc_params->avc_param.i_fps_den, enc_params->avc_param.i_fps_num}, (AVRational){1, OBE_CLOCK} );
+#if X264_BUILD < 148
     buffer_duration = frame_duration * enc_params->avc_param.sc.i_buffer_size;
+#endif
 
     /* Broadcast because input and muxer can be stuck waiting for encoder */
     pthread_cond_broadcast( &encoder->queue.in_cv );
@@ -169,7 +207,9 @@ static void *start_encoder( void *ptr )
             h->enc_smoothing_buffer_complete = 0;
             pthread_mutex_unlock( &h->enc_smoothing_queue.mutex );
             syslog( LOG_INFO, "Speedcontrol reset\n" );
+#if X264_BUILD < 148
             x264_speedcontrol_sync( s, enc_params->avc_param.sc.i_buffer_size, enc_params->avc_param.sc.f_buffer_init, 0 );
+#endif
             h->encoder_drop = 0;
         }
         pthread_mutex_unlock( &h->drop_mutex );
@@ -177,8 +217,10 @@ static void *start_encoder( void *ptr )
         raw_frame = encoder->queue.queue[0];
         pthread_mutex_unlock( &encoder->queue.mutex );
 
+        /* convert obe_frame_t into x264 friendly struct */
         if( convert_obe_to_x264_pic( &pic, raw_frame ) < 0 )
         {
+printf("Malloc failed\n");
             syslog( LOG_ERR, "Malloc failed\n" );
             break;
         }
@@ -188,6 +230,7 @@ static void *start_encoder( void *ptr )
         pts2 = malloc( sizeof(int64_t) );
         if( !pts2 )
         {
+printf("Malloc failed\n");
             syslog( LOG_ERR, "Malloc failed\n" );
             break;
         }
@@ -230,13 +273,48 @@ static void *start_encoder( void *ptr )
                 else
                     buffer_fill = (float)(-1 * last_frame_delta)/buffer_duration;
 
+#if X264_BUILD < 148
                 x264_speedcontrol_sync( s, buffer_fill, enc_params->avc_param.sc.i_buffer_size, 1 );
+#endif
             }
 
             pthread_mutex_unlock( &h->enc_smoothing_queue.mutex );
         }
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+	kl_histogram_sample_begin(&frame_encode);
+        kl_histogram_cumulative_begin(&gop_encode);
+#endif
         frame_size = x264_encoder_encode( s, &nal, &i_nal, &pic, &pic_out );
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+	kl_histogram_sample_complete(&frame_encode);
+        kl_histogram_cumulative_complete(&gop_encode);
+
+static int fc = 0;
+for (int m = 0; m < i_nal; m++) {
+	//printf("fc = %d I:%d %d\n", fc++, nal[m].i_type, nal[m].i_payload);
+        if (nal[m].i_type == NAL_SLICE) {
+           fc++;
+           /* Four MB slices per frame, and 60fps */
+           /* TODO: Warning, if the framerate is not 60fps then this calculation breaks.
+            * I've been manually adjusting it for 60 vs 30 content when testing.
+            */
+           if (fc == (enc_params->avc_param.i_threads * 60)) {
+               fc = 0;
+               kl_histogram_cumulative_finalize(&gop_encode); 
+               kl_histogram_cumulative_initialize(&gop_encode); 
+           }
+        }
+}
+
+	if (histogram_dump++ > 240) {
+		histogram_dump = 0;
+#if PRINT_HISTOGRAMS
+		kl_histogram_printf(&frame_encode);
+		kl_histogram_printf(&gop_encode);
+#endif
+	}
+#endif
 
         arrival_time = raw_frame->arrival_time;
         raw_frame->release_data( raw_frame );
@@ -245,6 +323,7 @@ static void *start_encoder( void *ptr )
 
         if( frame_size < 0 )
         {
+            printf("x264_encoder_encode failed\n");
             syslog( LOG_ERR, "x264_encoder_encode failed\n" );
             break;
         }
@@ -260,10 +339,22 @@ static void *start_encoder( void *ptr )
             memcpy( coded_frame->data, nal[0].p_payload, frame_size );
             coded_frame->is_video = 1;
             coded_frame->len = frame_size;
+#if X264_BUILD < 148
             coded_frame->cpb_initial_arrival_time = pic_out.hrd_timing.cpb_initial_arrival_time;
             coded_frame->cpb_final_arrival_time = pic_out.hrd_timing.cpb_final_arrival_time;
             coded_frame->real_dts = pic_out.hrd_timing.cpb_removal_time;
             coded_frame->real_pts = pic_out.hrd_timing.dpb_output_time;
+#else
+            coded_frame->cpb_initial_arrival_time = pic_out.hrd_timing.cpb_initial_arrival_time * 27000000.0;
+            coded_frame->cpb_final_arrival_time = pic_out.hrd_timing.cpb_final_arrival_time * 27000000.0;
+            coded_frame->real_dts = (pic_out.hrd_timing.cpb_removal_time * 27000000.0);
+            coded_frame->real_pts = (pic_out.hrd_timing.dpb_output_time  * 27000000.0);
+#if 0
+            printf("H264: real_pts:%" PRIi64 " real_dts:%" PRIi64 " (%.3f %.3f)\n",
+                coded_frame->real_pts, coded_frame->real_dts,
+                pic_out.hrd_timing.dpb_output_time, pic_out.hrd_timing.cpb_removal_time);
+#endif
+#endif
             pts2 = pic_out.opaque;
             coded_frame->pts = pts2[0];
             coded_frame->random_access = pic_out.b_keyframe;

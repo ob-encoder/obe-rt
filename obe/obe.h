@@ -95,7 +95,7 @@ enum input_type_e
     INPUT_URL,
     INPUT_DEVICE_DECKLINK,
     INPUT_DEVICE_LINSYS_SDI,
-//    INPUT_DEVICE_V4L2,
+    INPUT_DEVICE_V4L2,
 //    INPUT_DEVICE_ASI,
 };
 
@@ -109,6 +109,11 @@ typedef struct
     int video_format;
     int video_connection;
     int audio_connection;
+
+    int enable_smpte2038;
+    int enable_scte35;
+    int enable_vanc_cache;
+    int enable_bitstream_audio;
 } obe_input_t;
 
 /**** Stream Formats ****/
@@ -133,6 +138,7 @@ enum stream_formats_e
     AUDIO_E_AC_3, /* ATSC A/52B Annex E / Enhanced AC-3 */
 //    AUDIO_E_DIST, /* E Distribution Audio */
     AUDIO_AAC,
+    AUDIO_AC_3_BITSTREAM,   /* ATSC A/52B / AC-3 Bitstream passthorugh */
 
     SUBTITLES_DVB,
     MISC_TELETEXT,
@@ -167,6 +173,10 @@ enum stream_formats_e
     VANC_DTV_DATA_BROADCAST,
     VANC_SMPTE_VBI,
     VANC_SCTE_104,
+
+    /* Kernel Labs, a generic handler */
+    DVB_TABLE_SECTION,
+    SMPTE2038,
 };
 
 enum mp2_mode_e
@@ -221,12 +231,13 @@ typedef struct
     uint64_t channel_layout;
     int num_channels; /* set if channel layout is 0 */
     int sample_rate;
+    int sdi_audio_pair; /* 1-8 */
 
     /* Raw Audio */
     int sample_format;
 
     /* Compressed Audio */
-    int bitrate;
+    int bitrate; /* Kbps */
     int aac_is_latm; /* LATM is sometimes known as MPEG-4 Encapsulation */
 
     /** Subtitles **/
@@ -320,7 +331,7 @@ int obe_convert_analogue_to_smpte( int format, int line_analogue, int field, int
  * You can use the functions in the x264 API for tweaking or edit the parameter struct directly.
  * Be aware that some parameters will affect hardware support.
  */
-int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t *param );
+int obe_populate_avc_encoder_params( obe_t *h, int input_stream_id, x264_param_t *param, const char *preset_name);
 
 /**** 3DTV ****/
 /* Arrangements - Frame Packing */
@@ -472,6 +483,8 @@ typedef struct
     int program_num;
     int pmt_pid;
     int pcr_pid;
+    int scte35_pid;
+    int smpte2038_pid;
 
     int pcr_period;
     int pat_period;

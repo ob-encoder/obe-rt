@@ -24,8 +24,6 @@
 #ifndef OBE_COMMON_H
 #define OBE_COMMON_H
 
-#include "config.h"
-
 #include <libavutil/pixfmt.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/common.h>
@@ -48,6 +46,7 @@
 #define MAX_STREAMS 40
 #define MAX_CHANNELS 16
 
+#define MIN_PROBE_TIME  5
 #define MAX_PROBE_TIME 20
 
 #define OBE_CLOCK 27000000LL
@@ -141,6 +140,7 @@ typedef struct
     uint64_t channel_layout;
     int num_channels; /* set if channel layout is 0 */
     int sample_rate;
+    int sdi_audio_pair; /* 1-8 */
 
     /* Raw Audio */
     int sample_format;
@@ -167,9 +167,6 @@ typedef struct
 
     /* VBI */
     int vbi_ntsc;
-
-    /** Misc **/
-    int source;
 } obe_int_input_stream_t;
 
 typedef struct
@@ -209,6 +206,15 @@ typedef struct
     int     format;    /* image format */
     int     first_line; /* first line of image (SD from SDI only) */
 } obe_image_t;
+#define PRINT_OBE_IMAGE(i, prefix) { \
+	printf("%s: obj = %p, w=%d h=%d planes=%d csp=%d [%s] fmt=%d fl=%d\n", \
+		prefix, i, (i)->width, (i)->height, (i)->planes, (i)->csp, \
+		(i)->csp == PIX_FMT_YUV420P   ? "PIX_FMT_YUV420P" : \
+		(i)->csp == PIX_FMT_YUV420P10 ? "PIX_FMT_YUV420P10" : \
+		(i)->csp == PIX_FMT_YUV422P   ? "PIX_FMT_YUV422P" : \
+		(i)->csp == PIX_FMT_YUV422P10 ? "PIX_FMT_YUV422P10" : "UNDEFINED", \
+		(i)->format, (i)->first_line); \
+};
 
 typedef struct
 {
@@ -371,6 +377,10 @@ typedef struct
     int cancel_thread;
 
 } obe_filter_t;
+#define PRINT_OBE_FILTER(f, prefix) { \
+	printf("%s: obj = %p, num_ids=%d list[0]=%d\n", \
+		prefix, f, (f)->num_stream_ids, (f)->stream_id_list[0]); \
+};
 
 typedef struct
 {
@@ -430,6 +440,11 @@ typedef struct
 
 struct obe_t
 {
+    /* bitmask, def:0. */
+#define INPUTSOURCE__SDI_VANC_DISCOVERY_DISPLAY (1 <<  0)
+#define INPUTSOURCE__SDI_VANC_DISCOVERY_SCTE104 (1 <<  1)
+#define MUX__DQ_HEXDUMP                         (1 <<  4)
+    uint32_t verbose_bitmask;
     int is_active;
     int obe_system;
 
@@ -496,7 +511,8 @@ struct obe_t
 
     /* Statistics and Monitoring */
 
-
+    /* Misc configurable system parameters */
+    unsigned int probe_time_seconds;
 };
 
 typedef struct

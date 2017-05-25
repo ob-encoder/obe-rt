@@ -30,14 +30,33 @@
 
 #define MP2_AUDIO_BUFFER_SIZE 50000
 
-static void *start_encoder( void *ptr )
+#define LOCAL_DEBUG 0
+
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+#include <libklmonitoring/klmonitoring.h>
+#endif
+
+static void *start_encoder_mp2( void *ptr )
 {
+#if LOCAL_DEBUG
+    printf("%s()\n", __func__);
+#endif
+
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+    struct kl_histogram audio_encode;
+    int histogram_dump = 0;
+    kl_histogram_reset(&audio_encode, "audio frame encode", KL_BUCKET_VIDEO);
+#endif
     obe_aud_enc_params_t *enc_params = ptr;
     obe_t *h = enc_params->h;
     obe_encoder_t *encoder = enc_params->encoder;
     obe_output_stream_t *stream = enc_params->stream;
     obe_raw_frame_t *raw_frame;
     obe_coded_frame_t *coded_frame;
+
+#if LOCAL_DEBUG
+    printf("%s() output_stream_id = %d\n", __func__, encoder->output_stream_id);
+#endif
 
     twolame_options *tl_opts = NULL;
     int output_size, frame_size, linesize; /* Linesize in libavresample terminology is the entire buffer size for packed formats */
@@ -129,6 +148,21 @@ static void *start_encoder( void *ptr )
         raw_frame = encoder->queue.queue[0];
         pthread_mutex_unlock( &encoder->queue.mutex );
 
+#if LOCAL_DEBUG
+        /* Send any audio to the AC3 frame slicer.
+         * Push the buffer starting at the channel containing bitstream, and span 2 channels,
+         * we'll get called back with a completely aligned, crc'd and valid AC3 frame.
+         */
+        printf("%s() output_stream_id = %d linesize = %d, num_samples = %d, num_channels = %d, sample_fmt = %d, raw_frame->input_stream_id = %d\n",
+                __func__,
+                encoder->output_stream_id,
+                raw_frame->audio_frame.linesize,
+                raw_frame->audio_frame.num_samples,
+                raw_frame->audio_frame.num_channels,
+                raw_frame->audio_frame.sample_fmt,
+                raw_frame->input_stream_id);
+#endif
+
         if( cur_pts == -1 )
             cur_pts = raw_frame->pts;
 
@@ -149,7 +183,19 @@ static void *start_encoder( void *ptr )
 
         avresample_read( avr, (uint8_t**)&audio_buf, avresample_available( avr ) );
 
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_sample_begin(&audio_encode);
+#endif
         output_size = twolame_encode_buffer_float32_interleaved( tl_opts, audio_buf, raw_frame->audio_frame.num_samples, output_buf, MP2_AUDIO_BUFFER_SIZE );
+#ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
+        kl_histogram_sample_complete(&audio_encode);
+        if (histogram_dump++ > 240) {
+                histogram_dump = 0;
+#if PRINT_HISTOGRAMS
+                kl_histogram_printf(&audio_encode);
+#endif
+        }
+#endif
 
         if( output_size < 0 )
         {
@@ -210,4 +256,4 @@ end:
     return NULL;
 }
 
-const obe_aud_enc_func_t twolame_encoder = { start_encoder };
+const obe_aud_enc_func_t twolame_encoder = { start_encoder_mp2 };

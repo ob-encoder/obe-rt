@@ -447,7 +447,7 @@ static int remove_stream( char *command, obecli_command_t *child )
 
     int output_stream_id = obe_otoi( command, -1 );
 
-    FAIL_IF_ERROR( output_stream_id < 0 || output_stream_id == 0 || cli.num_output_streams == 2,
+    FAIL_IF_ERROR( output_stream_id < 0 || output_stream_id == 0 || cli.num_output_streams == 2 || cli.num_output_streams <= output_stream_id,
                    "Invalid stream id\n" );
 
     free( cli.output_streams[output_stream_id].ts_opts.teletext_opts );

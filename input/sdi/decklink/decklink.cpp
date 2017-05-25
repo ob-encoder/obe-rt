@@ -316,7 +316,6 @@ void kllog(const char *category, const char *format, ...)
     va_end(vl);
 
     syslog(LOG_INFO | LOG_LOCAL4, "%s", buf);
-    fprintf(stdout, "%s", buf);
 }
 
 static int transmit_pes_to_muxer(decklink_ctx_t *decklink_ctx, uint8_t *buf, uint32_t byteCount);

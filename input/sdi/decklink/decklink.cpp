@@ -315,7 +315,7 @@ void kllog(const char *category, const char *format, ...)
     vsprintf(&buf[strlen(buf)], format, vl);
     va_end(vl);
 
-    syslog(LOG_INFO, "%s", buf);
+    syslog(LOG_INFO | LOG_LOCAL4, "%s", buf);
     fprintf(stdout, "%s", buf);
 }
 

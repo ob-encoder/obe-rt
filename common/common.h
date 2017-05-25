@@ -512,7 +512,8 @@ struct obe_t
 
     /* Statistics and Monitoring */
 
-
+    /* Misc configurable system parameters */
+    unsigned int probe_time_seconds;
 };
 
 typedef struct

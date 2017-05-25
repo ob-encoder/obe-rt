@@ -493,6 +493,22 @@ public:
                 decklink_opts_->timebase_num = video_format_tab[i].timebase_num;
                 decklink_opts_->timebase_den = video_format_tab[i].timebase_den;
 
+		if (decklink_opts_->video_format == INPUT_VIDEO_FORMAT_1080P_2997)
+		{
+		   if (p_display_mode->GetFieldDominance() == bmdProgressiveSegmentedFrame)
+		   {
+		       /* HACK: The transport is structurally interlaced, so we need
+			  to treat it as such in order for VANC processing to
+			  work properly (even if the actual video really may be
+			  progressive).  This also coincidentally works around a bug
+			  in VLC where 1080i/59 content gets put out as 1080psf/29, and
+			  that's a much more common use case in the broadcast world
+			  than real 1080 progressive video at 30 FPS. */
+		       fprintf(stderr, "Treating 1080psf/30 as interlaced\n");
+		       decklink_opts_->video_format = INPUT_VIDEO_FORMAT_1080I_5994;
+		   }
+		}
+
                 get_format_opts( decklink_opts_, p_display_mode );
                 setup_pixel_funcs( decklink_opts_ );
 

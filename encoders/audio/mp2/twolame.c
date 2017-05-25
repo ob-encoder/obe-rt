@@ -30,13 +30,17 @@
 
 #define MP2_AUDIO_BUFFER_SIZE 50000
 
+#define LOCAL_DEBUG 0
+
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
 #include <libklmonitoring/klmonitoring.h>
 #endif
 
 static void *start_encoder_mp2( void *ptr )
 {
+#if LOCAL_DEBUG
     printf("%s()\n", __func__);
+#endif
 
 #ifdef HAVE_LIBKLMONITORING_KLMONITORING_H
     struct kl_histogram audio_encode;
@@ -49,6 +53,10 @@ static void *start_encoder_mp2( void *ptr )
     obe_output_stream_t *stream = enc_params->stream;
     obe_raw_frame_t *raw_frame;
     obe_coded_frame_t *coded_frame;
+
+#if LOCAL_DEBUG
+    printf("%s() output_stream_id = %d\n", __func__, encoder->output_stream_id);
+#endif
 
     twolame_options *tl_opts = NULL;
     int output_size, frame_size, linesize; /* Linesize in libavresample terminology is the entire buffer size for packed formats */
@@ -139,6 +147,21 @@ static void *start_encoder_mp2( void *ptr )
 
         raw_frame = encoder->queue.queue[0];
         pthread_mutex_unlock( &encoder->queue.mutex );
+
+#if LOCAL_DEBUG
+        /* Send any audio to the AC3 frame slicer.
+         * Push the buffer starting at the channel containing bitstream, and span 2 channels,
+         * we'll get called back with a completely aligned, crc'd and valid AC3 frame.
+         */
+        printf("%s() output_stream_id = %d linesize = %d, num_samples = %d, num_channels = %d, sample_fmt = %d, raw_frame->input_stream_id = %d\n",
+                __func__,
+                encoder->output_stream_id,
+                raw_frame->audio_frame.linesize,
+                raw_frame->audio_frame.num_samples,
+                raw_frame->audio_frame.num_channels,
+                raw_frame->audio_frame.sample_fmt,
+                raw_frame->input_stream_id);
+#endif
 
         if( cur_pts == -1 )
             cur_pts = raw_frame->pts;

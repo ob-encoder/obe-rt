@@ -23,6 +23,8 @@
 #include "common/common.h"
 #include "audio.h"
 
+#define LOCAL_DEBUG 0
+
 static void *start_filter_audio( void *ptr )
 {
     obe_raw_frame_t *raw_frame, *split_raw_frame;
@@ -48,7 +50,7 @@ static void *start_filter_audio( void *ptr )
         raw_frame = filter->queue.queue[0];
         pthread_mutex_unlock( &filter->queue.mutex );
 
-#if 0
+#if LOCAL_DEBUG
 printf("%s() raw_frame->input_stream_id = %d, num_encoders = %d\n", __func__, raw_frame->input_stream_id, h->num_encoders);
         printf("%s() linesize = %d, num_samples = %d, num_channels = %d, sample_fmt = %d\n",
                 __func__,
@@ -88,10 +90,16 @@ printf("%s() raw_frame->input_stream_id = %d, num_encoders = %d\n", __func__, ra
                 return NULL;
             }
 
-            /* TODO: offset the channel pointers by the user's request */
-            av_samples_copy(split_raw_frame->audio_frame.audio_data,
-                            &raw_frame->audio_frame.audio_data[((output_stream->sdi_audio_pair - 1) << 1) + output_stream->mono_channel], 0, 0,
-                            split_raw_frame->audio_frame.num_samples, num_channels, split_raw_frame->audio_frame.sample_fmt);
+            /* Copy samples for each channel into a new buffer, so each downstream encoder can
+             * compress the channels the user has selected via sdi_audio_pair.
+             */
+            av_samples_copy(split_raw_frame->audio_frame.audio_data, /* dst */
+                            &raw_frame->audio_frame.audio_data[((output_stream->sdi_audio_pair - 1) << 1) + output_stream->mono_channel], /* src */
+                            0, /* dst offset */
+                            0, /* src offset */
+                            split_raw_frame->audio_frame.num_samples,
+                            num_channels,
+                            split_raw_frame->audio_frame.sample_fmt);
 
             add_to_encode_queue(h, split_raw_frame, h->encoders[i]->output_stream_id);
         } /* For all PCM encoders */
@@ -114,6 +122,13 @@ printf("%s() raw_frame->input_stream_id = %d, num_encoders = %d\n", __func__, ra
             /* TODO: Match the input raw frame to the output encoder, else we could send
              * frames for ac3 encoder #2 to ac3 encoder #1.
              */
+            if (raw_frame->input_stream_id != h->encoders[i]->output_stream_id)
+                continue;
+
+#if LOCAL_DEBUG
+            printf("%s() adding frame for input %d to encoder output %d\n", __func__,
+                raw_frame->input_stream_id, h->encoders[i]->output_stream_id);
+#endif
 
             remove_from_queue(&filter->queue);
             add_to_encode_queue(h, raw_frame, h->encoders[i]->output_stream_id);
